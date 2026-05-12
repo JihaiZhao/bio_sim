@@ -39,3 +39,6 @@ _isaac_sim/
 # Build
 dist/
 build/
+
+# Vendored third-party assets — clone these directly per scripts/download_assets.py
+third_party/

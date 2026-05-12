@@ -1,0 +1,106 @@
+# cuRobo robot config for Dexmate Vega-1 (gripper variant) with holonomic base.
+#
+# Templates: dual_ur10e.yml (V2 main — dual-arm tool_frames pattern)
+#            franka_mobile.yml (isaac-4.0 — planar base + lock_joints + cspace)
+#
+# urdf_path / asset_root_path are placeholders — bio_sim.motion.planner injects
+# absolute paths at load time so this YAML is portable.
+#
+# Collision sphere data is auto-extracted from the upstream collision URDF; see
+# scripts/extract_collision_spheres.py.
+
+robot_cfg:
+  kinematics:
+    urdf_path: "dexmate_planning.urdf"
+    asset_root_path: ""
+    base_link: "world"
+
+    # Dual-arm IK targets. cuRobo honors collision constraints cleanly on the
+    # primary (first) frame; secondary frame constraints are experimental
+    # (cuRobo discussion #209). Plan single-arm tasks against L_ee only.
+    tool_frames: ["L_ee", "R_ee"]
+
+    collision_link_names: [
+      "base",
+      "torso_l1", "torso_l2", "torso_l3",
+      "arm_center",
+      "head_l1", "head_l2", "head_l3",
+      "L_arm_l1", "L_arm_l2", "L_arm_l3", "L_arm_l4", "L_arm_l5", "L_arm_l6", "L_arm_l7", "L_arm_l8",
+      "L_ee", "L_gripper_base", "L_gripper_l1", "L_gripper_l2",
+      "R_arm_l1", "R_arm_l2", "R_arm_l3", "R_arm_l4", "R_arm_l5", "R_arm_l6", "R_arm_l7", "R_arm_l8",
+      "R_ee", "R_gripper_base", "R_gripper_l1", "R_gripper_l2",
+    ]
+
+    collision_spheres: "spheres/dexmate_vega_gripper.yml"
+    collision_sphere_buffer: 0.005
+
+    # Disabled self-collision pairs (cuRobo auto-disables direct parent-child;
+    # specify non-adjacent and cross-chain pairs based on the upstream SRDF).
+    self_collision_ignore:
+      base: ["torso_l1"]
+      torso_l1: ["torso_l2", "torso_l3"]
+      torso_l2: ["torso_l3"]
+      torso_l3: ["L_arm_l1", "R_arm_l1", "head_l1", "arm_center"]
+      arm_center: ["L_arm_l1", "R_arm_l1", "head_l1"]
+      head_l1: ["head_l2", "head_l3"]
+      head_l2: ["head_l3"]
+      L_arm_l1: ["L_arm_l2", "L_arm_l3"]
+      L_arm_l2: ["L_arm_l3"]
+      L_arm_l3: ["L_arm_l4", "L_arm_l5"]
+      L_arm_l4: ["L_arm_l5"]
+      L_arm_l5: ["L_arm_l6", "L_arm_l7"]
+      L_arm_l6: ["L_arm_l7", "L_arm_l8"]
+      L_arm_l7: ["L_arm_l8"]
+      L_arm_l8: ["L_ee", "L_gripper_base", "L_gripper_l1", "L_gripper_l2"]
+      L_ee: ["L_gripper_base", "L_gripper_l1", "L_gripper_l2"]
+      L_gripper_base: ["L_gripper_l1", "L_gripper_l2"]
+      L_gripper_l1: ["L_gripper_l2"]
+      R_arm_l1: ["R_arm_l2", "R_arm_l3"]
+      R_arm_l2: ["R_arm_l3"]
+      R_arm_l3: ["R_arm_l4", "R_arm_l5"]
+      R_arm_l4: ["R_arm_l5"]
+      R_arm_l5: ["R_arm_l6", "R_arm_l7"]
+      R_arm_l6: ["R_arm_l7", "R_arm_l8"]
+      R_arm_l7: ["R_arm_l8"]
+      R_arm_l8: ["R_ee", "R_gripper_base", "R_gripper_l1", "R_gripper_l2"]
+      R_ee: ["R_gripper_base", "R_gripper_l1", "R_gripper_l2"]
+      R_gripper_base: ["R_gripper_l1", "R_gripper_l2"]
+      R_gripper_l1: ["R_gripper_l2"]
+
+    self_collision_buffer:
+      base: 0.05
+      torso_l1: 0.02
+      torso_l2: 0.02
+      torso_l3: 0.02
+
+    mesh_link_names: []
+
+    # Head + grippers are not motion-planned. Gripper open/close is commanded
+    # directly through IsaacLab; head stays neutral.
+    lock_joints:
+      head_j1: 0.0
+      head_j2: 0.0
+      head_j3: 0.0
+      L_gripper_j1: 0.0
+      L_gripper_j2: 0.0
+      R_gripper_j1: 0.0
+      R_gripper_j2: 0.0
+
+    cspace:
+      joint_names: [
+        "base_x_slide", "base_y_slide", "base_yaw_rotate",
+        "torso_j1", "torso_j2", "torso_j3",
+        "L_arm_j1", "L_arm_j2", "L_arm_j3", "L_arm_j4", "L_arm_j5", "L_arm_j6", "L_arm_j7",
+        "R_arm_j1", "R_arm_j2", "R_arm_j3", "R_arm_j4", "R_arm_j5", "R_arm_j6", "R_arm_j7",
+      ]
+      retract_config: [
+        0.0, 0.0, 0.0,
+        0.0, 0.5, 0.0,
+        0.0, 0.5, 0.0, -1.5, 0.0, 0.5, 0.0,
+        0.0, -0.5, 0.0, -1.5, 0.0, -0.5, 0.0,
+      ]
+      null_space_weight: [1, 1, 1, 1, 1, 1, 1, 1, 1, 1, 1, 1, 1, 1, 1, 1, 1, 1, 1, 1]
+      # Base joints weighted higher so cuRobo prefers arm motion when possible.
+      cspace_distance_weight: [2, 2, 2, 1, 1, 1, 1, 1, 1, 1, 1, 1, 1, 1, 1, 1, 1, 1, 1, 1]
+      max_acceleration: 8.0
+      max_jerk: 200.0
