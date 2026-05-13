@@ -26,20 +26,38 @@ REPOS: dict[str, str] = {
     # "autobio_assets": "https://github.com/autobio-bench/AutoBio",
 }
 
+# IsaacLab and cuRobo install editable via `uv pip install -e` after cloning,
+# so we pin to specific refs here. M0 install order: isaacsim (pip) -> IsaacLab
+# (editable from this clone) -> curobo (editable from this clone, source build).
+PINNED_REPOS: dict[str, tuple[str, str]] = {
+    "IsaacLab": ("https://github.com/isaac-sim/IsaacLab.git", "v2.3.0"),
+    "curobo": ("https://github.com/NVlabs/curobo.git", "main"),
+}
 
-def clone(name: str, url: str) -> None:
+
+def clone(name: str, url: str, ref: str | None = None, shallow: bool = True) -> None:
     dest = THIRD_PARTY / name
     if dest.exists():
         print(f"[skip] {dest} already exists")
         return
     THIRD_PARTY.mkdir(exist_ok=True)
-    print(f"[clone] {url} -> {dest}")
-    subprocess.run(["git", "clone", "--depth", "1", url, str(dest)], check=True)
+    args = ["git", "clone"]
+    if shallow:
+        args += ["--depth", "1"]
+    if ref:
+        args += ["--branch", ref]
+    args += [url, str(dest)]
+    print(f"[clone] {url}@{ref or 'HEAD'} -> {dest} (shallow={shallow})")
+    subprocess.run(args, check=True)
 
 
 def main() -> None:
     for name, url in REPOS.items():
         clone(name, url)
+    for name, (url, ref) in PINNED_REPOS.items():
+        # curobo's setuptools_scm reads the version from `git describe`, so it
+        # needs the full history with tags. The other repos can stay shallow.
+        clone(name, url, ref, shallow=(name != "curobo"))
     print("done.")
 
 

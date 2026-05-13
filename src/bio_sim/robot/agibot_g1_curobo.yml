@@ -12,15 +12,18 @@
 robot_cfg:
   kinematics:
     use_usd_kinematics: False
-    urdf_path: "robot/G1_omnipicker/G1_omnipicker.urdf"
-    asset_root_path: "robot/G1_omnipicker"
+    # Both paths are placeholders — bio_sim.motion.planner.load_cfg resolves
+    # them to absolute paths under src/bio_sim/robot/ at load time.
+    urdf_path: "agibot_g1.urdf"
+    asset_root_path: ""
     isaac_usd_path: ""
     usd_robot_root: null
     usd_path: null
 
     base_link: "base_link"
-    ee_link: "gripper_r_center_link"
-    link_names: ["gripper_r_center_link", "gripper_l_center_link"]
+    # V2 schema: tool_frames replaces V1's ee_link + link_names. Primary tool
+    # frame is first; secondary frames follow.
+    tool_frames: ["gripper_r_center_link", "gripper_l_center_link"]
 
     collision_link_names:
       [

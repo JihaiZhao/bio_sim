@@ -1,13 +1,17 @@
 [project]
 name = "bio_sim"
 version = "0.1.0"
-description = "Biology-lab pick-and-place simulation in Isaac Sim 5.1 + Isaac Lab 2.3 with Dexmate Vega-1 and cuRobo motion planning"
+description = "Biology-lab pick-and-place simulation in Isaac Sim 5.1 + Isaac Lab 2.3 with Dexmate Vega-1 / Agibot G1 and cuRobo motion planning"
 readme = "README.md"
 requires-python = ">=3.11,<3.12"
 dependencies = [
-    # Heavy runtime deps (isaacsim, isaaclab, curobo) are installed via separate
-    # commands in M0 — they come from NVIDIA's pip index or a source build, not
-    # PyPI. Listed here once each install path is settled and reproducible.
+    "isaacsim[all,extscache]==5.1.*",
+    "isaaclab",
+    "isaaclab-assets",
+    "isaaclab-mimic",
+    "isaaclab-rl",
+    "isaaclab-tasks",
+    "nvidia-curobo[cu12,usd]",
 ]
 
 [build-system]
@@ -19,3 +23,34 @@ packages = ["src/bio_sim"]
 
 [tool.uv]
 package = true
+# cuRobo builds CUDA kernels and must see torch/setuptools/wheel from the venv;
+# build isolation would hide them.
+no-build-isolation-package = ["nvidia-curobo"]
+# Skip Windows-only transitive deps (pywin32) when resolving on Linux.
+environments = ["sys_platform == 'linux'"]
+# isaacsim-core's metadata declares pywin32 unconditionally (a Windows-only
+# package); rewrite to a properly-marked dep so Linux resolution drops it.
+override-dependencies = ["pywin32; sys_platform == 'win32'"]
+
+# flatdict 4.0.1 (pinned by isaaclab) ships a setup.py that imports
+# `pkg_resources`. setuptools 81+ removed pkg_resources (PEP 632), so pin
+# the build-time setuptools to the last version that still ships it.
+[tool.uv.extra-build-dependencies]
+flatdict = ["setuptools<81"]
+
+[tool.uv.sources]
+isaaclab        = { path = "third_party/IsaacLab/source/isaaclab",        editable = true }
+isaaclab-assets = { path = "third_party/IsaacLab/source/isaaclab_assets", editable = true }
+isaaclab-mimic  = { path = "third_party/IsaacLab/source/isaaclab_mimic",  editable = true }
+isaaclab-rl     = { path = "third_party/IsaacLab/source/isaaclab_rl",     editable = true }
+isaaclab-tasks  = { path = "third_party/IsaacLab/source/isaaclab_tasks",  editable = true }
+nvidia-curobo   = { path = "third_party/curobo",                          editable = true }
+
+# Isaac Sim wheels live on NVIDIA's pypi mirror, not PyPI.
+[[tool.uv.index]]
+name = "nvidia"
+url = "https://pypi.nvidia.com"
+explicit = true
+
+[tool.uv.sources.isaacsim]
+index = "nvidia"
