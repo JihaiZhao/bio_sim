@@ -18,6 +18,10 @@ THIRD_PARTY = REPO_ROOT / "third_party"
 
 REPOS: dict[str, str] = {
     "dexmate_urdf": "https://github.com/dexmate-ai/dexmate-urdf",
+    # Code reference (cuRobo wrapper, controller patterns) + source of Agibot
+    # G1 URDF and pre-built cuRobo config. Code MPL-2.0, assets CC BY-NC-SA 4.0
+    # (research/personal use only).
+    "genie_sim": "https://github.com/AgibotTech/genie_sim",
     # M2: enable when we start converting consumable meshes.
     # "autobio_assets": "https://github.com/autobio-bench/AutoBio",
 }

@@ -10,8 +10,10 @@ is the source of truth for design decisions; `README.md` is a summary.
 ### 1.1 In-scope (MVP, Milestone M2)
 
 - A **bio-lab scene** rendered in Isaac Sim 5.1 / Isaac Lab 2.3.
-- **Dexmate Vega-1** loaded with working articulation (wheels/holonomic base + torso + dual arms + grippers).
-- **Traditional motion planning only** — cuRobo for the arms (and ideally the base too, via whole-body planning over a holonomic dummy-joint chain).
+- **Two supported robots** (pipeline is robot-agnostic; choose at run time):
+  - **Dexmate Vega-1** with dual gripper — hand-authored configs (`dexmate_*`).
+  - **Agibot G1 (omnipicker)** — pre-built cuRobo configs vendored from genie_sim (`agibot_g1*`).
+- **Traditional motion planning only** — cuRobo for the arms (and for Dexmate, optionally the base too via the holonomic dummy-joint chain). Agibot G1's URDF abstracts the chassis as a fixed base; if we use G1, base motion is a separate SE(2) teleport step (per genie_sim's pattern).
 - One pick-and-place pipeline: drive base to source bench → dual-arm pick a tube from a rack → drive to target bench → place in target rack.
 - A `play.py` script that launches the scene and runs the demo end-to-end.
 
@@ -50,6 +52,16 @@ Selection rule: prefer first-party (NVIDIA / Isaac Sim / Isaac Lab) and high-sta
 community repos. Avoid low-star third-party IsaacLab forks — their patterns drift
 fast and we can't trust them not to disappear or break against IsaacLab 2.3.
 
+### `AgibotTech/genie_sim` *(primary code-pattern reference for cuRobo wiring)*
+- **What it is**: Agibot's Isaac Sim 5.x simulation stack for the Genie G-series wheeled humanoids. 883★, MPL-2.0 code, v3.1 (Apr 2026). Very active.
+- **Take — cuRobo wrapper pattern**: `source/geniesim/app/utils/motion_gen_reacher.py` defines `CuroboMotion(robot, world, robot_cfg, robot_prim_path, ...)` with `caculate_ik_goal()`, `plan_single_js()`, `solve_batch_ik()`, `attach_obj()`, `on_physics_step()`. This is the cleanest cuRobo wrapper in any first-party-adjacent repo — copy as the basis for our `bio_sim.motion.planner`.
+- **Take — high-level controller pattern**: `source/geniesim/app/controllers/api_core.py` (`APICore`) with `_get_ik_status`, `_joint_moveto`, `_update_robot_base` — direct analog for our `bio_sim.pipeline`.
+- **Take — trajectory retiming**: `source/geniesim/app/controllers/ruckig_move.py` — Ruckig OTG after cuRobo for smooth arm trajectories. Optional M2 polish.
+- **Take — gripper pattern**: `source/geniesim/app/controllers/parallel_gripper.py`.
+- **Take — pre-built Agibot G1 assets**: `source/geniesim/robot/isaac_sim/robot_urdf/G1_omnipicker.urdf` and `source/geniesim/app/curobo/configs/robot/G1_omnipicker_dual_arms.yml`. Vendored as `src/bio_sim/robot/agibot_g1.urdf` and `agibot_g1_curobo.yml`. The cuRobo YAML is known-good; no authoring needed.
+- **Don't take**: Their teleop / data-collection (out of scope for us), `update_robot_base` as anything more than inspiration — it's a teleport-style SE(2) update, not real chassis kinematics.
+- **License note**: Code MPL-2.0 (fine for borrowing patterns with attribution). The companion **GenieSimAssets** dataset (URDFs/USDs/meshes) is CC BY-NC-SA 4.0 — research/personal only, no commercial redistribution. This project is research-only, so usage is fine; flag if scope changes.
+
 ### `NVlabs/curobo` *(motion planner — core dependency)*
 - **What it does**: CUDA-accelerated motion planning. IK, collision-free trajectory optimization, MPC. Apache-2.0, ~1.5k stars, v0.8.0 / cuRoboV2 (Apr 2026).
 - **Branch choice**: `main` (cuRoboV2 / v0.8.0) is the target. The repo restructured between `isaac-*` branches (had `src/curobo/...` + `examples/...`) and `main` (has `curobo/...`, no top-level `examples/`).
@@ -74,6 +86,10 @@ fast and we can't trust them not to disappear or break against IsaacLab 2.3.
 - **Take — bimanual joint cfg pattern**: `manager_based/manipulation/reach/config/openarm/bimanual/joint_pos_env_cfg.py` (PR #4089) — the only first-party bimanual setup. Read for actuator-group / joint-name conventions, not for the MDP terms.
 - **Take — wheeled base ArticulationCfg**: `isaaclab_assets/robots/ridgeback_franka.py` (`RIDGEBACK_FRANKA_PANDA_CFG`). Use as a structural template for Dexmate's holonomic base modeling. See Risk §7 (issue #2254).
 - **Don't take**: Don't fork IsaacLab; pip-install it.
+
+### Agibot G1 assets (via genie_sim, vendored)
+- Robot URDF and cuRobo YAML are copied into `src/bio_sim/robot/agibot_g1.urdf` and `agibot_g1_curobo.yml`. ArticulationCfg authored at `agibot_g1_cfg.py`.
+- Visual meshes (FBX) live in **GenieSimAssets** on ModelScope/HuggingFace, fetched separately (M1 work). The URDF references them via `package://genie_robot_description/meshes/G1/...`. For cuRobo planning the meshes are not required (collision spheres are inline in the YAML); for Isaac Sim spawning we need either the meshes or a pre-generated USD.
 
 ### `dexmate-ai/dexmate-urdf` *(robot assets — only Vega source)*
 - **Take**: `pip install dexmate_urdf` to get URDF; download USD from GitHub release v0.8.3 for `ArticulationCfg.spawn.usd_path`. Use the `vega_1` variant (full body, dual gripper).
@@ -110,9 +126,13 @@ bio_sim/
 │   └── bio_sim/
 │       ├── __init__.py
 │       ├── robot/
-│       │   ├── dexmate_cfg.py         # ArticulationCfg (sim USD with real wheels)
-│       │   ├── dexmate_planning.urdf  # planning model: dummy x/y/yaw + torso + dual arms
-│       │   └── curobo_robot.yml       # cuRobo robot config (collision spheres, ee_links, link_poses)
+│       │   ├── dexmate_cfg.py             # ArticulationCfg (Vega sim USD with real wheels)
+│       │   ├── dexmate_planning.urdf      # cuRobo model: dummy x/y/yaw + torso + dual arms
+│       │   ├── dexmate_vega.yml           # cuRobo robot config (refs sphere YAML)
+│       │   ├── spheres/dexmate_vega_gripper.yml  # auto-extracted from upstream
+│       │   ├── agibot_g1_cfg.py           # ArticulationCfg for Agibot G1 (fixed base in URDF)
+│       │   ├── agibot_g1.urdf             # vendored from genie_sim
+│       │   └── agibot_g1_curobo.yml       # vendored from genie_sim (known-good)
 │       ├── scene/
 │       │   └── bio_lab.py             # InteractiveScene: floor, bench, racks, tubes
 │       ├── assets/
@@ -127,13 +147,16 @@ bio_sim/
 │       └── pipeline.py                # scripted pick-place state machine
 ├── scripts/
 │   ├── play.py                     # MVP entry point: scene + pipeline
-│   ├── inspect_robot.py            # load Dexmate alone, verify articulation
-│   ├── curobo_smoke.py             # run cuRobo motion_gen_reacher on Dexmate, no scene
+│   ├── inspect_robot.py            # load chosen robot alone, verify articulation
+│   ├── curobo_smoke.py             # run cuRobo motion_gen on chosen robot, no scene
 │   ├── convert_assets.py           # one-shot mesh/URDF → USD via MeshConverter/UrdfConverter
-│   └── download_assets.py          # fetch Dexmate USD release, init AutoBio submodule, lift SO-101 USDs
+│   ├── download_assets.py          # clone third_party/{dexmate_urdf, genie_sim, ...}
+│   ├── generate_planning_urdf.py   # idempotent: strip wheels, prepend dummy base (Dexmate)
+│   └── extract_collision_spheres.py # idempotent: upstream sphere URDF → cuRobo YAML
 └── third_party/
-    ├── autobio_assets/             # git submodule, meshes only
-    └── PythonRobotics/             # (optional) only if base fallback is needed
+    ├── dexmate_urdf/               # cloned, gitignored — Vega URDF + meshes + spheres
+    ├── genie_sim/                  # cloned, gitignored — code reference + Agibot G1 URDF/YAML
+    └── autobio_assets/             # M2 (cloned via download_assets)
 ```
 
 **Why no `source/bio_sim/` extension layout**: dropped because we have no

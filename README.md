@@ -24,7 +24,7 @@ place the tube.
 | Base planner fallback | PythonRobotics `a_star.py` | Copy-in only if cuRobo whole-body doesn't pan out |
 | Python env | **`uv venv` + `uv pip`** | Isaac Lab has native `uv` support (PR #3172) |
 | Python | 3.11 | Required by Isaac Sim 5.1 pip wheels |
-| Robot | Dexmate Vega-1 (`dexmate-urdf` v0.8.3+) | Apache-2.0, URDF in repo + USD in releases |
+| Robots (pick at run time) | **Dexmate Vega-1** (hand-authored) + **Agibot G1** (vendored from genie_sim) | Vega configs original; G1 configs are pre-built and known-good |
 | Lab assets | AutoBio meshes (converted) + NVIDIA Sim-Ready + primitives | Hybrid approach |
 
 ## Hardware
@@ -42,6 +42,7 @@ third-party IsaacLab forks are intentionally excluded.
 | Repo | Used for | License |
 | --- | --- | --- |
 | [`NVlabs/curobo`](https://github.com/NVlabs/curobo) | Core motion planner — dual-arm + holonomic-base whole-body planning (~1.5k★) | Apache-2.0 |
+| [`AgibotTech/genie_sim`](https://github.com/AgibotTech/genie_sim) | **Primary cuRobo wiring reference** (`motion_gen_reacher.py`, `api_core.py`, `ruckig_move.py`, `parallel_gripper.py`) + source of Agibot G1 URDF and pre-built cuRobo YAML (883★, MPL-2.0). Assets dataset (GenieSimAssets) is CC BY-NC-SA 4.0 — research-only. | MPL-2.0 / CC BY-NC-SA |
 | [`isaac-sim/IsaacLab`](https://github.com/isaac-sim/IsaacLab) | First-party `CuroboPlanner` wrapper (`isaaclab_mimic/motion_planners/curobo/`, SkillGen PR #3303), `InteractiveScene`, `ridgeback_franka.py` (wheeled base template), `openarm/bimanual/...` (dual-arm joint conventions) | BSD-3 |
 | [`AtsushiSakai/PythonRobotics`](https://github.com/AtsushiSakai/PythonRobotics) | Backup 2D base planner — copy-in `PathPlanning/AStar/a_star.py` if cuRobo whole-body falls short (29.5k★) | MIT |
 | [`dexmate-ai/dexmate-urdf`](https://github.com/dexmate-ai/dexmate-urdf) | Dexmate Vega-1 URDF + USD release artifacts (asset only) | Apache-2.0 |
@@ -68,11 +69,11 @@ uv pip install --upgrade pip
 bio_sim/
 ├── pyproject.toml
 ├── src/bio_sim/
-│   ├── robot/                # ArticulationCfg + cuRobo planning URDF/yml
+│   ├── robot/                # dexmate_* + agibot_g1_* configs (URDFs, cuRobo YAMLs, ArticulationCfgs)
 │   ├── scene/                # InteractiveScene for the bio lab
 │   ├── assets/               # bench, consumables, instruments
-│   ├── motion/               # cuRobo wrapper, base controller, fallback A*
+│   ├── motion/               # cuRobo wrapper (modeled on genie_sim CuroboMotion)
 │   └── pipeline.py           # scripted pick-place state machine
-├── scripts/{play.py, inspect_robot.py, curobo_smoke.py, convert_assets.py, download_assets.py}
-└── third_party/autobio_assets/   # submodule, meshes only
+├── scripts/{play.py, inspect_robot.py, curobo_smoke.py, convert_assets.py, download_assets.py, generate_planning_urdf.py, extract_collision_spheres.py}
+└── third_party/{dexmate_urdf, genie_sim, ...}   # cloned, gitignored
 ```
