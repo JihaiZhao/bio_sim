@@ -23,17 +23,11 @@ from pathlib import Path
 REPO_ROOT = Path(__file__).resolve().parent.parent
 sys.path.insert(0, str(REPO_ROOT / "src"))
 
-# Order matters. Isaac Sim 5.1 bundles omni.warp.core-1.8.2 which shadows
-# the pip warp-lang 1.13 at AppLauncher init time UNLESS warp is already
-# imported. Importing cuRobo first pins warp 1.13. We then add the
-# `wp.types.array` shim that Isaac Sim's internal warp utilities expect
-# (renamed to `wp.array` upstream). Without this shim AppLauncher crashes
-# inside isaacsim.core.utils.warp.rotations.
+# Importing the planner first (a) pins pip warp 1.13 in sys.modules and (b)
+# installs a compat shim for the Isaac Sim 5.1 ↔ warp namespace renames. Both
+# must happen before AppLauncher. agibot_g1_cfg is loaded AFTER AppLauncher
+# because it pulls in isaaclab.sim which needs carb.
 from bio_sim.motion import planner as p  # noqa: E402
-
-import warp as _wp  # noqa: E402
-if not hasattr(_wp.types, "array"):
-    _wp.types.array = _wp.array
 
 from isaaclab.app import AppLauncher  # noqa: E402
 
@@ -74,11 +68,10 @@ def main() -> int:
         return 1
 
     print("[1/5] building scene")
+    # Match genie_sim: no GroundPlane. The robot's USD lives in its own frame
+    # and its `fix_root_link=True` keeps it pinned. A floor would come from a
+    # scene USD (lab table / glovebox) once we load one.
     scene_cfg = InteractiveSceneCfg(num_envs=1, env_spacing=2.0)
-    scene_cfg.ground = AssetBaseCfg(
-        prim_path="/World/ground",
-        spawn=sim_utils.GroundPlaneCfg(),
-    )
     scene_cfg.dome_light = AssetBaseCfg(
         prim_path="/World/Light",
         spawn=sim_utils.DomeLightCfg(intensity=2000.0, color=(0.9, 0.9, 0.9)),
@@ -117,7 +110,9 @@ def main() -> int:
     positions, planner_joint_names, dt = p.trajectory_to_numpy(result, handle.planner)
     print(f"      trajectory: {positions.shape[0]} waypoints @ dt={dt:.3f}s")
 
-    # Map planner joints onto the sim's articulation joint ordering.
+    # Map planner trajectory joints onto the sim's articulation joint ordering.
+    # The trajectory carries its own joint name list (covers all cspace joints
+    # including locked ones), which may not match handle.joint_names exactly.
     sim_joint_names = list(robot.data.joint_names)
     planner_to_sim = [sim_joint_names.index(j) for j in planner_joint_names]
     full_target = robot.data.default_joint_pos.clone()

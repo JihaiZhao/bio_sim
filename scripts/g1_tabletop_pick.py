@@ -19,12 +19,9 @@ from pathlib import Path
 REPO_ROOT = Path(__file__).resolve().parent.parent
 sys.path.insert(0, str(REPO_ROOT / "src"))
 
-# See scripts/g1_smoke.py for why this ordering matters.
+# planner.py imports pin pip warp 1.13 and install the compat shims for
+# Isaac Sim 5.1's old warp namespace paths.
 from bio_sim.motion import planner as p  # noqa: E402
-
-import warp as _wp  # noqa: E402
-if not hasattr(_wp.types, "array"):
-    _wp.types.array = _wp.array
 
 from isaaclab.app import AppLauncher  # noqa: E402
 
@@ -91,11 +88,9 @@ def main() -> int:
         return 1
 
     print("[1/6] building scene")
+    # No GroundPlane — robot is pinned via fix_root_link, table is kinematic.
+    # Matches genie_sim's pattern (floor would come from a scene USD).
     scene_cfg = InteractiveSceneCfg(num_envs=1, env_spacing=2.0)
-    scene_cfg.ground = AssetBaseCfg(
-        prim_path="/World/ground",
-        spawn=sim_utils.GroundPlaneCfg(),
-    )
     scene_cfg.dome_light = AssetBaseCfg(
         prim_path="/World/Light",
         spawn=sim_utils.DomeLightCfg(intensity=2000.0, color=(0.9, 0.9, 0.9)),

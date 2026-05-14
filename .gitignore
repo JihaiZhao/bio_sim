@@ -42,3 +42,11 @@ build/
 
 # Vendored third-party assets — clone these directly per scripts/download_assets.py
 third_party/
+
+# Large binary lab assets that the user drops in by hand. Source files in
+# src/bio_sim/assets/ (the package __init__, future helper modules) stay
+# tracked, but each per-category subdir is binary content.
+src/bio_sim/assets/robot/
+src/bio_sim/assets/equipment/
+src/bio_sim/assets/infrastructure/
+src/bio_sim/assets/labware/

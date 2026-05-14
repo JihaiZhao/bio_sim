@@ -20,10 +20,55 @@ from typing import Any
 import torch
 import yaml
 
-from curobo._src.robot.loader.kinematics_loader_cfg import KinematicsLoaderCfg
-from curobo._src.robot.types.cspace_params import CSpaceParams
-from curobo.motion_planner import MotionPlanner, MotionPlannerCfg
-from curobo.types import GoalToolPose, JointState, Pose
+# --- Isaac Sim 5.1 ↔ pip warp 1.13 compat shim --------------------------------
+# Isaac Sim 5.1 ships omni.warp.core-1.8.2 in its extscache and many of its
+# exts/replicator code does `from warp.X import Y` against the 1.8 public
+# namespace. cuRobo V2 needs pip warp 1.13's `wp.func(module=)`. Importing
+# pip warp first pins 1.13 in sys.modules; then we expose warp 1.13's private
+# `_src` submodules back at the old public paths so Isaac Sim's imports
+# resolve. Anything 1.13 dropped entirely (e.g. `warp.sim`, `warp.constants`)
+# is handled by attaching empty placeholder modules — losing only those
+# specific features (Isaac Sim 5.1 still loads core robot code).
+import sys as _sys
+import types as _types
+
+import warp as _wp  # noqa: E402
+
+def _expose_src(name: str) -> None:
+    src_name = f"warp._src.{name}"
+    pub_name = f"warp.{name}"
+    try:
+        src_mod = __import__(src_name, fromlist=["*"])
+    except ImportError:
+        return
+    pub_mod = _sys.modules.get(pub_name)
+    if pub_mod is None:
+        _sys.modules[pub_name] = src_mod
+        setattr(_wp, name, src_mod)
+    else:
+        for attr in dir(src_mod):
+            if not attr.startswith("_") and not hasattr(pub_mod, attr):
+                try:
+                    setattr(pub_mod, attr, getattr(src_mod, attr))
+                except (AttributeError, TypeError):
+                    pass
+
+
+for _name in ("utils", "types", "context", "codegen", "tape", "fabric", "builtins"):
+    _expose_src(_name)
+
+for _missing_module in ("sim", "constants"):
+    _full = f"warp.{_missing_module}"
+    if _full not in _sys.modules:
+        _placeholder = _types.ModuleType(_full)
+        _sys.modules[_full] = _placeholder
+        setattr(_wp, _missing_module, _placeholder)
+# ------------------------------------------------------------------------------
+
+from curobo._src.robot.loader.kinematics_loader_cfg import KinematicsLoaderCfg  # noqa: E402
+from curobo._src.robot.types.cspace_params import CSpaceParams  # noqa: E402
+from curobo.motion_planner import MotionPlanner, MotionPlannerCfg  # noqa: E402
+from curobo.types import GoalToolPose, JointState, Pose  # noqa: E402
 
 # V1 cuRobo YAMLs (e.g. those vendored from genie_sim) include USD-kinematics
 # and a few other fields that V2 removed. Strip them silently.
@@ -117,6 +162,8 @@ def build(
     use_cuda_graph: bool = True,
     warmup_iterations: int = 5,
     enable_graph_warmup: bool = True,
+    position_tolerance: float = 0.01,
+    orientation_tolerance: float = 0.1,
 ) -> PlannerHandle:
     """Build a warmed-up ``MotionPlanner`` from a bio_sim robot YAML.
 
@@ -132,6 +179,8 @@ def build(
         num_ik_seeds=num_ik_seeds,
         num_trajopt_seeds=num_trajopt_seeds,
         use_cuda_graph=use_cuda_graph,
+        position_tolerance=position_tolerance,
+        orientation_tolerance=orientation_tolerance,
     )
     if scene_model is not None:
         create_kwargs["scene_model"] = (
@@ -201,12 +250,17 @@ def plan_arm_pose(
 def trajectory_to_numpy(result, planner: MotionPlanner):
     """Extract (positions, joint_names, dt) from a plan result.
 
-    Returns positions of shape ``(n_waypoints, n_joints)``.
+    Returns positions of shape ``(n_waypoints, n_joints)``. ``joint_names`` is
+    the interpolated plan's *own* joint-name list — it includes locked
+    joints too, so length may exceed ``planner.joint_names`` (which is the
+    set of unlocked / planning-active joints).
     """
     interp = result.get_interpolated_plan()
     pos = interp.position.detach().cpu().numpy()
-    # cuRobo plan_pose returns shape (batch, n_waypoints, n_joints) or
-    # (batch, n_tools, n_waypoints, n_joints); reduce to 2D.
+    # cuRobo's interpolated plan tensors are typically (batch, n_tools,
+    # n_waypoints, n_joints); strip leading dims to get a 2D trajectory.
     while pos.ndim > 2:
         pos = pos[0]
-    return pos, planner.joint_names, planner.trajopt_solver.config.interpolation_dt
+    dt = planner.trajopt_solver.config.interpolation_dt
+    joint_names = list(interp.joint_names) if hasattr(interp, "joint_names") else list(planner.joint_names)
+    return pos, joint_names, dt

@@ -22,7 +22,9 @@ from isaaclab.actuators import ImplicitActuatorCfg
 from isaaclab.assets import ArticulationCfg
 
 _REPO_ROOT = Path(__file__).resolve().parents[3]
-AGIBOT_G1_USD_PATH = _REPO_ROOT / "third_party" / "GenieSimAssets" / "robot" / "G2" / "robot.usd"
+AGIBOT_G1_USD_PATH = (
+    _REPO_ROOT / "src" / "bio_sim" / "assets" / "robot" / "G1_omnipicker" / "robot.usd"
+)
 
 
 AGIBOT_G1_CFG = ArticulationCfg(
@@ -34,7 +36,15 @@ AGIBOT_G1_CFG = ArticulationCfg(
             max_depenetration_velocity=5.0,
         ),
         articulation_props=sim_utils.ArticulationRootPropertiesCfg(
+            # Self-collisions enforced by cuRobo (spheres + SRDF disable pairs);
+            # PhysX-level disabled to avoid spurious base-to-torso contacts.
             enabled_self_collisions=False,
+            # Pin the chassis. Mimics genie_sim's setup where the robot lives
+            # in a scene USD with a baked-in floor at the right z; we don't
+            # load that scene yet, so without fixing the root the robot would
+            # fall through any flat ground plane spawned at z=0 (the USD's
+            # base_link extends to z=-0.21).
+            fix_root_link=True,
             solver_position_iteration_count=12,
             solver_velocity_iteration_count=1,
         ),
@@ -60,22 +70,26 @@ AGIBOT_G1_CFG = ArticulationCfg(
             "idx65_arm_r_joint5": 1.57,
             "idx66_arm_r_joint6": 1.57,
             "idx67_arm_r_joint7": -1.57,
+            # NOTE: the 4 mimic-loop joints idx{39,49,79,89} are emitted by
+            # IsaacLab's UrdfConverter as "..._joint0" rather than the URDF's
+            # "..._joint2" suffix. Match the USD names; cuRobo continues to
+            # reference the URDF-side names internally.
             "idx31_gripper_l_inner_joint1": 0.0,
             "idx32_gripper_l_inner_joint3": 0.0,
             "idx33_gripper_l_inner_joint4": 0.349,
-            "idx39_gripper_l_inner_joint2": 0.0,
+            "idx39_gripper_l_inner_joint0": 0.0,
             "idx41_gripper_l_outer_joint1": 0.0,
             "idx42_gripper_l_outer_joint3": 0.01,
             "idx43_gripper_l_outer_joint4": -0.35,
-            "idx49_gripper_l_outer_joint2": 0.0,
+            "idx49_gripper_l_outer_joint0": 0.0,
             "idx71_gripper_r_inner_joint1": 0.0,
             "idx72_gripper_r_inner_joint3": 0.0,
             "idx73_gripper_r_inner_joint4": 0.349,
-            "idx79_gripper_r_inner_joint2": 0.0,
+            "idx79_gripper_r_inner_joint0": 0.0,
             "idx81_gripper_r_outer_joint1": 0.0,
             "idx82_gripper_r_outer_joint3": 0.01,
             "idx83_gripper_r_outer_joint4": -0.35,
-            "idx89_gripper_r_outer_joint2": 0.0,
+            "idx89_gripper_r_outer_joint0": 0.0,
         },
     ),
     actuators={
