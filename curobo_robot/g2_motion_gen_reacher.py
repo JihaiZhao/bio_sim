@@ -116,6 +116,10 @@ from omni.isaac.core import World
 from omni.isaac.core.objects import cuboid, sphere
 from omni.isaac.core.utils.types import ArticulationAction
 
+# swerve_base.py lives next to this script.
+sys.path.append(os.path.dirname(os.path.abspath(__file__)))
+from swerve_base import KeyboardTeleop, SwerveBaseController
+
 from curobo.geom.sdf.world import CollisionCheckerType
 from curobo.geom.types import WorldConfig
 from curobo.types.base import TensorDeviceType
@@ -310,6 +314,8 @@ def main():
     cmd_plan = None
     cmd_idx = 0
     idx_list = None
+    swerve = None  # swerve base controller, built once after articulation init
+    teleop = None  # keyboard teleop (None when headless)
     my_world.scene.add_default_ground_plane()
     i = 0
     spheres = None
@@ -336,6 +342,35 @@ def main():
                 values=np.array([5000 for _ in range(len(idx_list))]),
                 joint_indices=idx_list,
             )
+            # Base swerve controller on the 8 wheel DOFs (disjoint from the
+            # arm idx_list). Must run after _articulation_view.initialize()
+            # so set_gains / switch_dof_control_mode take effect; the wheel
+            # joints ship as a stiff position drive holding 0, so the
+            # drive-mode switch is what lets them move at all.
+            if swerve is None:
+                swerve = SwerveBaseController(robot, robot._articulation_view)
+                swerve.configure_drive_modes()
+                teleop = (
+                    KeyboardTeleop() if args.headless_mode is None else None
+                )
+
+        # Kinematic base: hold/teleport the root every step from the moment
+        # the controller exists (incl. the settle window) so the freed base
+        # never free-falls. Teleop twist is applied only after settling;
+        # before that we hold the fixed standing pose (zero twist).
+        if swerve is not None:
+            sjs = robot.get_joints_state()
+            cur_steer = (
+                swerve.read_cur_steer(sjs) if sjs is not None else np.zeros(4)
+            )
+            if step_index >= 20 and teleop is not None:
+                vx, vy, wz = teleop.get_twist()
+            else:
+                vx, vy, wz = 0.0, 0.0, 0.0
+            swerve.step_kinematic(
+                vx, vy, wz, my_world.get_physics_dt(), cur_steer
+            )
+
         if step_index < 20:
             continue
 
@@ -440,9 +475,14 @@ def main():
             for ln in link_names:
                 if ln == moved:
                     cp, co = cube_pose[ln]
+                    # cuRobo plans in base_link frame; the cube pose is world.
+                    # When the kinematic base has driven off the origin we
+                    # must express the goal in the current base frame.
+                    if swerve is not None:
+                        cp, co = swerve.world_to_base(cp, co)
                     goal_for[ln] = Pose(
-                        position=tensor_args.to_device(cp),
-                        quaternion=tensor_args.to_device(co),
+                        position=tensor_args.to_device(np.asarray(cp)),
+                        quaternion=tensor_args.to_device(np.asarray(co)),
                     )
                 else:
                     goal_for[ln] = cur_pose[ln].clone()
