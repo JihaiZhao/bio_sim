@@ -39,3 +39,6 @@ _isaac_sim/
 # Build
 dist/
 build/
+
+# Vendored third-party clones (curobo etc.) — not tracked here
+third_party/

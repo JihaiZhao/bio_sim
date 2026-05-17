@@ -1,0 +1,12 @@
+# MVP offsets. Object/table/marker poses are NOT here -- they are derived
+# deterministically from the robot's retract FK in
+# scene.BioScene.place_for_validation() so the grasp/place are reachable.
+
+object: object_a
+
+pick_marker: A          # navigate here before grasping
+place_marker: B         # navigate here before placing
+
+pre_grasp_dz: 0.12      # m above the grasp for the approach / pre-place
+lift_dz: 0.15           # m to lift after grasping (clears the table)
+retreat_dz: 0.15        # m to lift after releasing
