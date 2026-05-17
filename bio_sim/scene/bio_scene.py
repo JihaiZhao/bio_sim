@@ -27,6 +27,10 @@ class ObjectSpec:
     name: str
     position: Tuple[float, float, float]
     size: float = 0.05
+    # If set, a rectangular box (x, y, z) instead of a cube -- a thin
+    # elongated "rod"/tube the omnipicker can actually cage, vs a fat cube
+    # its fingers just swipe.
+    scale: Tuple[float, float, float] | None = None
     color: Tuple[float, float, float] = (0.9, 0.1, 0.1)
 
 
@@ -48,7 +52,12 @@ class Marker:
 
 # Placeholders; place_for_validation() overwrites every pose from the robot's
 # real workspace once the arm planner exists.
-DEFAULT_OBJECTS = [ObjectSpec(name="object_a", position=(0.5, 0.0, 0.5), size=0.05)]
+# A thin object makes the omnipicker over-close (idx81 ~0 = pinching near
+# nothing -> no grip). A CHUNKY box fills the gripper's grasp so the
+# fingers stop at a firm mid-range clamp. (Earlier big-cube "swipe" was the
+# centering / fast-close bugs, since fixed.)
+DEFAULT_OBJECTS = [ObjectSpec(name="object_a", position=(0.5, 0.0, 0.5),
+                              scale=(0.03, 0.1, 0.1))]
 DEFAULT_TABLES = [
     TableSpec("table_A", center=(0.5, 0.0, 0.2), size=(0.4, 0.4, 0.4)),
     TableSpec("table_B", center=(1.5, 0.0, 0.2), size=(0.4, 0.4, 0.4)),
@@ -58,7 +67,7 @@ DEFAULT_MARKERS = [
     Marker("B", position=(1.0, 0.0, 0.02), yaw=0.0, color=(0.1, 0.4, 0.9)),
 ]
 
-OBJECT_HALF = 0.025          # half of object size (0.05)
+OBJECT_HALF = 0.04           # z half-extent of the box (0.08/2)
 GRASP_CLEARANCE = 0.001      # object bottom barely above table top
 SLAB_THICKNESS = 0.04        # table is a thin slab, not a floor monolith
 NAV_DX = 1.0                 # B is A + this many metres along world +x
@@ -76,20 +85,31 @@ class BioScene:
         self._usd_help = None
         self._world_cfg = None
         self._last_sync = -1
+        self._sim = None
         # filled by place_for_validation()
         self.place_xyz: Tuple[float, float, float] | None = None
         self.grasp_q = np.array([1.0, 0.0, 0.0, 0.0])
 
     # ---- build --------------------------------------------------------
     def build(self, sim) -> None:
+        # Only the ground + cuRobo world here. The object/tables/markers are
+        # spawned LATER (place_for_validation) directly at their resolved
+        # poses: Isaac records a prim's default state at add() time and
+        # snaps back to it on Play, so spawning at the default pose and
+        # moving afterwards drops the cube on the floor on a windowed Play.
+        self._sim = sim
+        sim.world.scene.add_default_ground_plane()
+        self._build_curobo_world()
+
+    def _spawn_props(self) -> None:
+        from isaacsim.core.api.materials import PhysicsMaterial
         from isaacsim.core.api.objects import (
             DynamicCuboid,
             FixedCuboid,
             VisualCuboid,
         )
 
-        sim.world.scene.add_default_ground_plane()
-
+        sim = self._sim
         for t in self.tables:
             self._table_prims[t.name] = sim.world.scene.add(FixedCuboid(
                 prim_path=f"/World/{t.name}", name=t.name,
@@ -97,22 +117,42 @@ class BioScene:
                 scale=np.array(t.size, dtype=np.float32),
                 color=np.array(t.color),
             ))
-
+        # High-friction material so the force-closed fingers can hold it.
+        grip_mat = PhysicsMaterial(
+            prim_path="/World/PhysicsMaterials/grip",
+            static_friction=1.2, dynamic_friction=1.0, restitution=0.1,
+        )
         for o in self.objects:
-            self._obj_prims[o.name] = sim.world.scene.add(DynamicCuboid(
+            # Mass = 0.01 kg, matching genie_sim's ACTUAL value
+            # (G2_omnipicker client default 0.01 kg). The earlier note
+            # here claimed "genie uses ~0.2 kg" -- that was wrong; genie
+            # never validated pure-friction carry of a heavy object, it
+            # used a 10 g toy mass. This underactuated mimic gripper holds
+            # by fingertip friction only, so the payload must be light;
+            # the old "0.2 kg gets punched away if light" worry is moot
+            # now that the base accel-slew, vice-hold, and arrive-gated
+            # settle remove the impulsive disturbances.
+            kw = {}
+            if o.scale is not None:
+                kw["scale"] = np.array(o.scale, dtype=np.float32)
+            else:
+                kw["size"] = o.size
+            cube = sim.world.scene.add(DynamicCuboid(
                 prim_path=f"/World/{o.name}", name=o.name,
                 position=np.array(o.position, dtype=np.float32),
-                size=o.size, color=np.array(o.color),
+                color=np.array(o.color), mass=0.3, **kw,
             ))
-
+            try:
+                cube.apply_physics_material(grip_mat)
+            except Exception as exc:  # noqa: BLE001
+                print(f"[scene] friction material skipped: {exc}")
+            self._obj_prims[o.name] = cube
         for m in self.markers:
             self._marker_prims[m.name] = VisualCuboid(
                 prim_path=f"/World/marker_{m.name}", name=f"marker_{m.name}",
                 position=np.array(m.position, dtype=np.float32),
                 size=0.08, color=np.array(m.color),
             )
-
-        self._build_curobo_world()
 
     def _build_curobo_world(self) -> None:
         # Initial placeholder world; the periodic stage resync (maybe_sync)
@@ -142,42 +182,67 @@ class BioScene:
         self._usd_help.add_world_to_stage(self._world_cfg, base_frame="/World")
 
     # ---- deterministic, reachable placement ---------------------------
-    def place_for_validation(self, robot, pre_dz: float, lift_dz: float) -> None:
+    def place_for_validation(self, robot, cfg: dict) -> None:
         """Snap table/object/markers to a provably reachable workspace anchor.
 
         Robot starts at world origin (A), so base frame == world frame here.
-        We keep the retract EE orientation and SEARCH for a position where
-        the grasp, the pre-grasp (+pre_dz) and the lift/retreat (+lift_dz)
-        are ALL IK-feasible -- retract FK alone can sit on a reach boundary.
-        B := A + (NAV_DX, 0); place mirrors the grasp in B's frame (pure
-        translation, yaw 0) so it is equally reachable.
+        Keep the (IK-checked) retract EE orientation and search a grid of
+        candidate positions; among those where grasp, pre-grasp (+pre_dz)
+        and lift/retreat (+clearance) are ALL IK-feasible, pick the one whose
+        height is CLOSEST to cfg['grasp_height'] (so the robot grasps low at
+        a realistic table height, not up near its shoulder).
+        B := A + (NAV_DX, 0); place mirrors the grasp in B's frame.
         """
         import numpy as _np
+
+        pre_dz = cfg["pre_grasp_dz"]
+        lift_dz = cfg["lift_dz"]
+        want_z = cfg.get("grasp_height", 0.75)
 
         p_ee, q_ee = robot.arm.retract_link_pose(
             robot.retract_config, robot.j_names, robot.ee_link
         )
         self.grasp_q = q_ee.copy()
+        # make ik_ok enforce the same idle-arm pin plan_single uses
+        robot.arm.compute_idle_retract_pin(robot.retract_config, robot.j_names)
 
         clearance = max(lift_dz, pre_dz)
-        anchor = None
+        # Build candidates, try them ordered by closeness to the desired
+        # height; accept the FIRST where grasp + pre-grasp + lift all
+        # actually plan (real plan_single, idle pinned) and early-exit.
+        z_lo = max(0.30, want_z - 0.20)
+        z_hi = min(float(p_ee[2]) + 1e-6, want_z + 0.35)
+        cands = []
         for shrink in (1.0, 0.85, 0.7, 0.55):
-            for dz_down in _np.arange(0.0, 0.65, 0.05):
-                c = _np.array([p_ee[0] * shrink, p_ee[1] * shrink,
-                               p_ee[2] - dz_down], dtype=_np.float64)
-                if (robot.arm.ik_ok(c, q_ee)
-                        and robot.arm.ik_ok(c + [0, 0, pre_dz], q_ee)
-                        and robot.arm.ik_ok(c + [0, 0, clearance], q_ee)):
-                    anchor = c
-                    break
-            if anchor is not None:
+            for z in _np.arange(z_lo, z_hi, 0.05):
+                cands.append(_np.array(
+                    [p_ee[0] * shrink, p_ee[1] * shrink, z], dtype=_np.float64))
+        cands.sort(key=lambda c: (abs(c[2] - want_z), -c[0]))
+
+        anchor = None
+        for ci, c in enumerate(cands):
+            if (robot.arm.plan_ok(c, q_ee)
+                    and robot.arm.plan_ok(c + [0, 0, pre_dz], q_ee)
+                    and robot.arm.plan_ok(c + [0, 0, clearance], q_ee)):
+                anchor = c
+                print(f"[scene] anchor found after {ci + 1} candidates; "
+                      f"z={c[2]:.3f} (target {want_z})")
                 break
         if anchor is None:
             anchor = _np.array(p_ee, dtype=_np.float64)
-            print("[scene] WARNING: no fully-reachable anchor found; "
-                  "falling back to retract FK (pre-grasp/lift may fail)")
+            print("[scene] WARNING: no plannable anchor found; "
+                  "falling back to retract FK")
 
-        ox, oy, oz = float(anchor[0]), float(anchor[1]), float(anchor[2])
+        # `anchor` is a BASE-frame target validated by plan_ok. Runtime reads
+        # the object's WORLD pose and converts via world_to_base, which
+        # subtracts the base standing height. So place the object in WORLD at
+        # anchor + BASE_STAND_Z; then world_to_base recovers exactly `anchor`
+        # (base at A is x=y=yaw=0, z=BASE_STAND_Z). Without this the runtime
+        # grasp goal is BASE_STAND_Z below the validated pose -> IK_FAIL.
+        from ..robot.base import BASE_STAND_Z
+
+        ox, oy = float(anchor[0]), float(anchor[1])
+        oz = float(anchor[2]) + BASE_STAND_Z
         obj = self.objects[0]
         obj.position = (ox, oy, oz)
 
@@ -200,22 +265,9 @@ class BioScene:
         tB.center = (tcx + NAV_DX, tcy, top - SLAB_THICKNESS / 2.0)
         tB.size = tA.size
 
-        # push prims to their resolved poses
-        self._obj_prims[obj.name].set_world_pose(
-            position=np.array(obj.position, dtype=np.float32)
-        )
-        for t in (tA, tB):
-            self._table_prims[t.name].set_world_pose(
-                position=np.array(t.center, dtype=np.float32)
-            )
-            self._table_prims[t.name].set_local_scale(
-                np.array(t.size, dtype=np.float32)
-            )
-        for name in ("A", "B"):
-            m = self._marker_by_name[name]
-            self._marker_prims[name].set_world_pose(
-                position=np.array(m.position, dtype=np.float32)
-            )
+        # Specs are now final -> spawn the prims AT these poses, so Isaac
+        # records them as the default state (no Play snap-back / floor drop).
+        self._spawn_props()
 
         print(f"[scene] validation layout: object/grasp @ "
               f"({ox:.3f},{oy:.3f},{oz:.3f})  "
@@ -228,6 +280,15 @@ class BioScene:
 
     def object_prim(self, name: str):
         return self._obj_prims[name]
+
+    def object_dims(self, name: str):
+        """(x, y, z) extents for the cuRobo payload box."""
+        for o in self.objects:
+            if o.name == name:
+                if o.scale is not None:
+                    return list(o.scale)
+                return [o.size, o.size, o.size]
+        return [0.05, 0.05, 0.05]
 
     def marker_pose(self, name: str) -> Tuple[float, float, float]:
         m = self._marker_by_name[name]
@@ -243,6 +304,11 @@ class BioScene:
         ignore = [robot_prim_path, "/World/defaultGroundPlane", "/curobo"]
         ignore += [f"/World/{o.name}" for o in self.objects]
         ignore += [f"/World/marker_{m.name}" for m in self.markers]
+        # The validation table is a PHYSICAL rest surface, not a planning
+        # obstacle: as a cuRobo obstacle the thin slab right under the cube
+        # blocks the hand from descending to a low grasp (IK_FAIL). Excluding
+        # it also makes setup-time IK match runtime planning.
+        ignore += [f"/World/{t.name}" for t in self.tables]
         obstacles = self._usd_help.get_obstacles_from_stage(
             only_paths=["/World"],
             reference_prim_path=robot_prim_path,

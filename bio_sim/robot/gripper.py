@@ -1,107 +1,82 @@
 #
-# Gripper / object attachment.
+# Gripper = force-controlled friction grasp (genie_sim ParallelGripper),
+# NOT a fixed joint. The fingers close under a capped force; PhysX contact
+# friction holds the cube. cuRobo attach is planning-only (so the carried
+# legs avoid self-collision with the payload) and does NOT touch physics.
 #
-# The G2 omnipicker's gripper joints are locked (passive) in the cuRobo
-# config, so for the MVP "grasp" is a KINEMATIC attach, not finger closure:
-#   - on grasp: freeze the object's rigid-body dynamics and remember its pose
-#     relative to the gripper center link; each step it follows the gripper.
-#   - on release: snap it down onto the place target and re-enable dynamics.
-#
-# TODO(payload-aware planning): also call motion_gen.attach_objects_to_robot()
-# so cuRobo plans the transport leg with the object's collision volume. Until
-# then, keep place/lift offsets generous.
+# The actual drive control (zero stiffness + capped max force + closing
+# velocity, reasserted every step) lives in G2Robot.set_gripper /
+# _apply_gripper. This class just sequences attach/detach + bookkeeping.
 #
 
 from __future__ import annotations
 
 import numpy as np
 
-from curobo.types.math import Pose
-
-
-def _quat_mul(a, b):
-    aw, ax, ay, az = a
-    bw, bx, by, bz = b
-    return np.array([
-        aw * bw - ax * bx - ay * by - az * bz,
-        aw * bx + ax * bw + ay * bz - az * by,
-        aw * by - ax * bz + ay * bw + az * bx,
-        aw * bz + ax * by - ay * bx + az * bw,
-    ], dtype=np.float64)
-
-
-def _quat_conj(q):
-    w, x, y, z = q
-    return np.array([w, -x, -y, -z], dtype=np.float64)
+GRASP_GAP_TOL = 0.10  # m; loose sanity (force-closure tolerates cm-level
+#                       arm error; only fail a wildly-missed reach)
 
 
 class Gripper:
     def __init__(self, robot):
         self._robot = robot
-        self._held = None          # object name
-        self._held_prim = None
-        self._rel_p = None         # object pos in gripper frame
-        self._rel_q = None         # object quat in gripper frame
+        self._held = None
 
     @property
     def holding(self) -> str | None:
         return self._held
 
-    def grasp(self, ctx, obj_name: str) -> None:
-        prim = ctx.scene.object_prim(obj_name)
-        gp, gq = self._robot.ee_world_pose(ctx)          # gripper center, world
-        op, oq = ctx.scene.object_pose(obj_name)
+    def grasp(self, ctx, obj_name: str) -> bool:
+        """Called AFTER the fingers have closed (force mode). Sanity-checks
+        the reach, then cuRobo-attaches the payload for planning."""
+        ee_p, _ = self._robot.ee_world_pose(ctx)
+        obj_p, _ = ctx.scene.object_pose(obj_name)
+        gap = float(np.linalg.norm(np.asarray(ee_p) - np.asarray(obj_p)))
+        print(f"[gripper] grasp gap |ee - object| = {gap:.4f} m")
+        # Did the fingers actually move? open target = GRIP_OPEN_Q (0.8);
+        # if idx81 is still ~0.8 the drive isn't actuating; if ~0 it closed.
+        gi, gpos = self._robot.gripper_joint_state()
+        ee_w, _ = self._robot.ee_world_pose(ctx)
+        gpos_s = ("n/a" if gpos is None
+                  else "[" + ", ".join(f"{p:.4f}" for p in gpos) + "]")
+        print(f"[gripper] DIAG cmd-joint(idx81) dof={gi} pos={gpos_s} "
+              f"(open~0.8, closed~0) "
+              f"ee_world={np.round(np.asarray(ee_w),3).tolist()} "
+              f"obj_world={np.round(np.asarray(obj_p),3).tolist()}")
+        if gap > GRASP_GAP_TOL:
+            print(f"[gripper] gap exceeds {GRASP_GAP_TOL} m -> reach missed")
+            return False
 
-        # rel = inv(gripper) * object
-        gq_c = _quat_conj(gq)
-        dp = np.asarray(op) - np.asarray(gp)
-        # rotate dp by conj(gq)
-        rp = _quat_mul(_quat_mul(gq_c, np.array([0.0, *dp])), gq)[1:]
-        self._rel_p = rp
-        self._rel_q = _quat_mul(gq_c, oq)
-
-        self._set_dynamics(prim, enabled=False)
-        self._held, self._held_prim = obj_name, prim
-        print(f"[gripper] grasped {obj_name}")
-
-    def release(self, ctx, place_xyz=None) -> None:
-        if self._held is None:
-            return
-        if place_xyz is not None:
-            self._held_prim.set_world_pose(
-                position=np.asarray(place_xyz, dtype=np.float32)
-            )
-        self._set_dynamics(self._held_prim, enabled=True)
-        print(f"[gripper] released {self._held}")
-        self._held = self._held_prim = None
-        self._rel_p = self._rel_q = None
-
-    def hold_step(self, ctx) -> None:
-        """Keep the held object glued to the gripper. Call every sim step."""
-        if self._held is None:
-            return
-        gp, gq = self._robot.ee_world_pose(ctx)
-        # object_world = gripper * rel
-        rp_w = _quat_mul(_quat_mul(gq, np.array([0.0, *self._rel_p])),
-                         _quat_conj(gq))[1:]
-        op = np.asarray(gp) + rp_w
-        oq = _quat_mul(gq, self._rel_q)
-        self._held_prim.set_world_pose(
-            position=op.astype(np.float32), orientation=oq.astype(np.float32)
+        # cuRobo payload-aware planning for the carried legs (planning only;
+        # no physics constraint -- the grip is held by finger friction).
+        cu_js = self._robot.read_cu_js()
+        p_w, q_w = ctx.scene.object_pose(obj_name)
+        p_b, q_b = self._robot.base.world_to_base(p_w, q_w)
+        dims = ctx.scene.object_dims(obj_name)
+        self._robot.arm.attach_payload(
+            cu_js, obj_name, dims,
+            [float(p_b[0]), float(p_b[1]), float(p_b[2]),
+             float(q_b[0]), float(q_b[1]), float(q_b[2]), float(q_b[3])],
         )
+        # Lock the fingers as a stiff vice at the contacted aperture so the
+        # carry (base accel, arm motion) can't ratchet them shut and eject
+        # the thin box. Still pure friction -- no joint to the object.
+        self._robot.clamp_hold()
+        self._held = obj_name
+        print(f"[gripper] grasped {obj_name} (friction vice-hold; cuRobo attached)")
+        return True
 
-    @staticmethod
-    def _set_dynamics(prim, enabled: bool) -> None:
-        # Best-effort: keep the cube from falling while carried.
-        for attr in ("disable_rigid_body_physics", "enable_rigid_body_physics"):
-            fn = getattr(prim, attr, None)
-            if fn is None:
-                continue
-            if (attr.startswith("disable") and not enabled) or (
-                attr.startswith("enable") and enabled
-            ):
-                try:
-                    fn()
-                    return
-                except Exception:
-                    pass
+    def release(self, ctx) -> None:
+        if self._held is None:
+            return
+        # Carry-integrity check: if the cube slipped out during the carry,
+        # |ee - object| will be large / object z near the floor.
+        ee_p, _ = self._robot.ee_world_pose(ctx)
+        obj_p, _ = ctx.scene.object_pose(self._held)
+        d = float(np.linalg.norm(np.asarray(ee_p) - np.asarray(obj_p)))
+        print(f"[gripper] at release: |ee-object|={d:.4f} m  "
+              f"object_z={float(obj_p[2]):.3f} (held OK if small & z>0.5)")
+        self._robot.arm.detach_payload()
+        self._robot.set_gripper(close=False)  # open the fingers (position)
+        print(f"[gripper] released {self._held}")
+        self._held = None

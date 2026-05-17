@@ -56,7 +56,7 @@ def main():
     )
     robot.load_into(sim, scene)
     # derive a deterministic, IK-reachable layout from the robot workspace
-    scene.place_for_validation(robot, cfg["pre_grasp_dz"], cfg["lift_dz"])
+    scene.place_for_validation(robot, cfg)
     scene.attach_to_stage(sim)
     sim.add_extensions()
 

@@ -31,6 +31,8 @@ class ArmPlanner:
         self.ee_link = ee_link
         self.idle_link = idle_link
         self._reactive = reactive
+        self._idle_pin = None  # set by compute_idle_retract_pin()
+        self._retract_js = None
 
         n_obstacle_cuboids = 30
         n_obstacle_mesh = 100
@@ -110,12 +112,44 @@ class ArmPlanner:
             return kin.ee_pose
         return kin.link_poses[link]
 
-    def ik_ok(self, p, q) -> bool:
-        """True if `p,q` (base_link frame) is IK-feasible for the active arm.
+    def compute_idle_retract_pin(self, retract_config, j_names) -> None:
+        """Cache the idle-arm link pose at the retract config so the setup
+        IK check (ik_ok) enforces the SAME idle-link constraint plan_single
+        does -- otherwise ee-only IK passes poses the real dual-arm plan
+        cannot reach (IK_FAIL at runtime)."""
+        from curobo.types.state import JointState
 
-        Used at scene setup to pick a provably reachable validation anchor
-        (FK of the retract config alone can sit on a reach boundary, so an
-        approach offset above it may be infeasible).
+        js = JointState.from_position(
+            self.tensor_args.to_device(retract_config).view(1, -1),
+            joint_names=j_names,
+        )
+        kin = self.motion_gen.compute_kinematics(js)
+        self._idle_pin = kin.link_poses[self.idle_link].clone()
+        self._retract_js = js.get_ordered_joint_state(self.joint_names)
+
+    def plan_ok(self, p, q) -> bool:
+        """True if cuRobo can actually plan_single to `p,q` (base frame) from
+        the retract state with the idle arm pinned -- i.e. the exact runtime
+        path. IK-only checks accept poses this dual-arm plan rejects, so the
+        anchor search must use this to avoid runtime IK_FAIL."""
+        from curobo.types.math import Pose
+
+        goal = Pose(
+            position=self.tensor_args.to_device(np.asarray(p, dtype=np.float64)),
+            quaternion=self.tensor_args.to_device(np.asarray(q, dtype=np.float64)),
+        )
+        res = self.motion_gen.plan_single(
+            self._retract_js.clone(), goal, self.plan_config,
+            link_poses={self.idle_link: self._idle_pin},
+        )
+        return bool(res.success.item())
+
+    def ik_ok(self, p, q) -> bool:
+        """True if `p,q` (base_link frame) is IK-feasible for the active arm
+        WITH the idle arm pinned (same constraint plan_single applies).
+
+        Without the idle-link pin, ee-only IK accepts poses the real dual-arm
+        plan rejects -> runtime IK_FAIL.
         """
         from curobo.types.math import Pose
 
@@ -123,11 +157,37 @@ class ArmPlanner:
             position=self.tensor_args.to_device(np.asarray(p, dtype=np.float64)),
             quaternion=self.tensor_args.to_device(np.asarray(q, dtype=np.float64)),
         )
-        res = self.motion_gen.solve_ik(pose)
+        if self._idle_pin is not None:
+            res = self.motion_gen.ik_solver.solve_single(
+                pose, link_poses={self.idle_link: self._idle_pin}
+            )
+        else:
+            res = self.motion_gen.solve_ik(pose)
         try:
             return bool(res.success.item())
         except Exception:
             return bool(np.any(res.success.cpu().numpy()))
+
+    # ---- payload-aware planning (cuRobo attach) -----------------------
+    def attach_payload(self, cu_js, name: str, dims, pose_base) -> bool:
+        """Attach a carried object so lift/transport/place are planned with
+        its collision volume. `pose_base` is the object pose in the robot
+        base frame: [x,y,z, qw,qx,qy,qz]. Uses the config's `attached_object`
+        link (parented to the gripper)."""
+        from curobo.geom.types import Cuboid
+
+        box = Cuboid(name=name, pose=list(pose_base), dims=list(dims))
+        ok = self.motion_gen.attach_external_objects_to_robot(
+            joint_state=cu_js.unsqueeze(0),
+            external_objects=[box],
+            link_name="attached_object",
+        )
+        print(f"[arm] cuRobo attach {name}: {'ok' if ok else 'FAILED'}")
+        return bool(ok)
+
+    def detach_payload(self) -> None:
+        self.motion_gen.detach_object_from_robot(link_name="attached_object")
+        print("[arm] cuRobo payload detached")
 
     def plan_to_world_pose(self, cu_js, p_world, q_world, base) -> Optional[object]:
         """Plan the active (ee_link) arm to a world pose; idle arm pinned.

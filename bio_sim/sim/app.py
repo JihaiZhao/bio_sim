@@ -84,6 +84,19 @@ class SimApp:
         """
         if self._headless is not None:
             self.world.play()  # no Play button in headless
+        else:
+            # Windowed: make sure Isaac does NOT auto-start the timeline.
+            # Stop it explicitly so nothing (init / settle / task) runs until
+            # the user actually clicks Play.
+            try:
+                import omni.timeline
+
+                omni.timeline.get_timeline_interface().stop()
+            except Exception as exc:  # noqa: BLE001
+                print(f"[sim] could not stop timeline: {exc}")
+            print("\n" + "=" * 60)
+            print("  Ready. Press the PLAY button in the viewport to start.")
+            print("=" * 60 + "\n")
 
         printed_play_hint = False
         while self.is_running():
@@ -91,7 +104,7 @@ class SimApp:
 
             if not self.world.is_playing():
                 if not printed_play_hint:
-                    print("**** Click Play to start simulation ****")
+                    print("**** Waiting for Play... ****")
                     printed_play_hint = True
                 continue
 
