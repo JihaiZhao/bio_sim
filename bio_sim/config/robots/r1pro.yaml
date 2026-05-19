@@ -1,0 +1,36 @@
+# R1 Pro (BEHAVIOR-1K holonomic) per-robot overlay for task_pick_place.
+# Merged ON TOP of bio_sim/config/task_pick_place.yaml by load_full_cfg --
+# keys here win on conflict.
+#
+# R1's reachable workspace and joint layout differ from G2, so cube_xyz,
+# the grasp orientation, and the arm init pose are all R1-specific. The
+# scripted base path (FaceYaw / DriveStraight distances in
+# bio_sim/tasks/pick_place.py) is shared; R1 currently does not need a
+# robot_start override (its base is dynamic-holonomic, no preplanned spawn).
+
+# R1 reachable grasp position. R1 cannot reach the y=-0.70 work line that
+# G2 uses; the cube sits closer (y=-0.50).
+cube_xyz: [-0.4, -0.50, 1.04]
+# R1 reachable grasp orientation -- SOLVED by grasp_probe.py: sweep the
+# wrist-roll about the reachable approach axis through the REAL runtime
+# planner (cuRobo plan_single, idle arm pinned), FK the planned config.
+# The old [0.7071,0.7071,0,0] WAS reachable but closed the fingers along
+# WORLD Z (vertical) -> cannot pinch a cube on a table (the bug). The quat
+# below: EE exactly at the cube (|EE-cube|=0.000), finger-close axis =
+# world +X (HORIZONTAL), approach = world -Y (arm reaches straight
+# forward). R1 right_eef_link LOCAL-Y == finger-close axis (confirmed).
+grasp_quat: [0.5, 0.5, 0.5, -0.5]
+# Cube spawn orientation [w, x, y, z]. See g2.yaml for the rotation logic;
+# the rule (line cube's 3cm axis up with the gripper's close axis) is the
+# same, but the close axis here is world +X under grasp_quat above so
+# identity already works.
+cube_quat: [1.0, 0.0, 0.0, 0.0]
+
+# ===== INIT ARM POSE =================================================
+# R1 Pro tucked "raised ready" pose (7 joints/arm). Keeps the COM over
+# the wheel base while the arm is frozen during NavigateTo -> the passive
+# z/rx/ry base stays statically stable (BEHAVIOR-1K), no [0,0] lock
+# needed. R1ProRobot.apply_init_pose reads this key.
+init_arm_pose:
+  left:  [0.0, 1.57, 0.0, -1.57, 1.57, 0.0, 0.0]
+  right: [0.0, -1.57, 0.0, -1.57, -1.57, 0.0, 0.0]

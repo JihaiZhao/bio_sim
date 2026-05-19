@@ -1,0 +1,37 @@
+# G2 omnipicker (fixed dual) per-robot overlay for task_pick_place.
+# Merged ON TOP of bio_sim/config/task_pick_place.yaml by load_full_cfg --
+# keys here win on conflict. Tune cube/grasp poses + arm init here without
+# touching the shared task file.
+#
+# WHY a separate file: the cube/grasp pose is robot-specific (G2's reachable
+# workspace != R1 Pro's), so smashing both into the shared task file was
+# unmaintainable. New robots = new file under robots/, no edits to the
+# shared task or to the existing per-robot files.
+
+# Gripper world pose at the grasp (cube position + orientation).
+# Default = the last planner-validated "wrist rolled sideways" orientation.
+cube_xyz: [-0.4, -0.70, 1.04]
+grasp_quat: [0.7071, 0.7071, 0.0, 0.0]
+# Cube spawn orientation [w, x, y, z]. The cube is a 0.03 x 0.10 x 0.10
+# slab; its THIN 3cm axis = local X. Rotate the cube here so that 3cm axis
+# lines up with where the gripper's fingers actually CLOSE at grasp_quat --
+# otherwise the fingers pinch off-axis and FLING the cube.
+# [1,0,0,0] = identity (thin axis along world X, the old hard-coded value).
+cube_quat: [1.0, 0.0, 0.0, 0.0]
+
+# Robot base SPAWN pose [x, y, yaw_rad] (world). The scripted base path
+# starts here: rotate to face_yaw, drive forward 1.0 -> arrives EXACTLY at
+# the validated grasp pose (0,0). reset (R key) returns here too.
+# G2's NavController reads this in apply_init_pose.
+robot_start: [0.0, 1.0, 0.0]
+
+# ===== INIT ARM POSE (non-invasive, genie_sim approach A) ============
+# Overlaid onto retract_config IN MEMORY at startup -> sets BOTH the
+# physical start pose AND the cuRobo IK seed, WITHOUT editing the
+# committed robot yml. 7 joint angles (rad) per arm, order = jointN 1..7
+# (left = idx21..27_arm_l, right = idx61..67_arm_r). Omit a side to keep
+# that arm's yml retract; comment out the whole block to use the yml
+# retract unchanged.
+init_arm_pose:
+  left:  [-1.57, 1.57, 1.57, -1.57, -1.57, 0.0, 0.0]
+  right: [1.57, 1.57, -1.57, -1.57, -1.57, 0.0, 0.0]

@@ -1,14 +1,52 @@
-# MVP offsets. Object/table/marker poses are NOT here -- they are derived
-# deterministically from the robot's retract FK in
-# scene.BioScene.place_for_validation() so the grasp/place are reachable.
+# MVP offsets + HARD-CODED layout, SHARED across robots.
+# Robot-specific overrides (cube pose, grasp quat, arm init, base spawn)
+# live in bio_sim/config/robots/<robot>.yaml and are merged on top of this
+# file at load time -- see bio_sim/tasks/pick_place.py:load_full_cfg.
+# Tune these numbers until the runtime grasp plan succeeds (reachability
+# is now manual, by design).
 
 object: object_a
 
-# Desired grasp/table height (m). The anchor search keeps the (IK-checked)
-# retract orientation but picks the feasible point whose height is closest
-# to this, so the robot grasps low at a realistic table height instead of
-# up near its shoulder.
-grasp_height: 0.75
+# ===== HARD-CODED LAYOUT (edit these to move things) ==================
+# Board footprint + thickness [len_x, len_y, thickness] (metres).
+table_size: [0.40, 0.40, 0.04]
+# B (place) marker = A + (nav_dx, 0) in world x. Boards sit nav_dx apart;
+# bio_optica fixtures auto-flank both boards (see scene.fixtures below --
+# update those positions if you change this).
+nav_dx: 4.5
+# Robot yaw (degrees) it turns to at A and B before grasping/placing.
+robot_face_yaw_deg: -90.0
+# =====================================================================
+
+# Declarative scene recipe (genie_sim-style): static fixtures are referenced
+# by their root-relative asset dir (resolved via the asset library /
+# $SIM_ASSETS) + a WORLD pose. No prim geometry is hardcoded here.
+scene:
+  # TWO bio_optica stainers, one OUTBOARD of each board (not between them).
+  # `position` = mesh FOOTPRINT CENTRE in world (x,y) + base on z;
+  # _spawn_fixtures recentres via the real USD AABB (this asset's mesh sits
+  # ~(-0.95,-0.51) off its prim origin, so raw-translate missed by ~1 m).
+  # Board A x = cube_xyz.x = -0.4; board B x = cube_xyz.x + nav_dx = 2.1;
+  # both on the y=-0.70 work line. Each machine is 1.2 m further OUT in x
+  # (A's outer side = more -x; B's outer side = more +x) so its ~1 m body
+  # stays clear of the grasp/place points (which sit AT the board centres).
+  # Quaternion = (+90 X stand upright) then (+180 Z); shared by both.
+  fixtures:
+    - name: bio_optica_a
+      asset: objects/bio_optica_aus240plus
+      # outer side of board A: x = -0.4 - 1.2 = -1.6
+      position: [-1.6, -0.70, 0.0]
+      quaternion: [0.0, 0.0, 0.70710678, 0.70710678]
+      # 1.5x enlarged (sidecar scale 1.0 -> 1.5). _spawn_fixtures applies
+      # scale BEFORE measuring the AABB, so the footprint recentre stays
+      # correct and `position` need not change.
+      scale: 1.5
+    - name: bio_optica_b
+      asset: objects/bio_optica_aus240plus
+      # outer side of board B: x = 2.1 + 1.2 = 3.3
+      position: [3.3, -0.70, 0.0]
+      quaternion: [0.0, 0.0, 0.70710678, 0.70710678]
+      scale: 1.5
 
 pick_marker: A          # navigate here before grasping
 place_marker: B         # navigate here before placing
@@ -20,3 +58,16 @@ retreat_dz: 0.15        # m to lift after releasing
 # payload exactly to table height collides with the table obstacle); the
 # cube free-falls this gap on release.
 place_clearance_dz: 0.05
+
+# Grasp mechanism: physics | assist
+#   physics = force-controlled friction grasp (validated e2e; realistic).
+#             BUT the G2 swerve base is KINEMATIC: an in-place base turn
+#             during NavigateTo teleports the root, and PhysX cannot
+#             transmit a teleport through a friction contact, so the cube
+#             gets ejected mid-carry (see bio_sim/robot/gripper.py header).
+#   assist  = ASSISTED grasp: additionally weld the object to the grasp
+#             link with a UsdPhysics.FixedJoint at the live contacted
+#             relative pose, so it rigidly follows the gripper through the
+#             kinematic base motion. NOT friction-dependent -> no carry
+#             fly-off. Less physically realistic (rigid attachment).
+grasp_mode: assist
