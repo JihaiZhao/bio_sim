@@ -1,0 +1,98 @@
+#usda 1.0
+(
+    doc = "FULL BEHAVIOR-1K holonomic variant of r1pro.usda. REFERENCES the"
+          " untouched r1pro.usda and adds ONLY the one thing the raw asset"
+          " is missing (and which OmniGibson's import_custom_robot.py wires"
+          " up): a world anchor on the articulation root base_footprint_x,"
+          " so the 6 virtual base joints become world-referenced 6-DOF"
+          " instead of a free-floating chain whose joints don't move"
+          " base_link. UNLIKE r1pro_planar.usda this does NOT clamp"
+          " z/rx/ry -- exactly as BEHAVIOR-1K, those 3 DOFs stay PASSIVE"
+          " and the 3-wheel (boundingSphere) base is statically stable, so"
+          " the body rests on its wheels and finds its own level. Also"
+          " binds a ZERO-friction physics material to the 3 welded wheel"
+          " colliders: locomotion is the virtual joints, so wheel-ground"
+          " friction must NOT fight the position drive (the welded,"
+          " non-rolling spheres otherwise SKID with ~500 N that the"
+          " rate-limited q_to_action force, ~80 N, cannot break ->"
+          " stall). frictionCombineMode=min so it wins vs the default"
+          " ground material; vertical support / tip resistance (normal"
+          " force + 3-pt geometry) is unaffected by friction. No"
+          " OmniGibson dep; r1pro.usda itself is never modified."
+    defaultPrim = "r1pro"
+)
+
+def Xform "r1pro" (
+    prepend references = @./r1pro.usda@</r1pro>
+)
+{
+    over "base_footprint_x"
+    {
+        # World-anchor the articulation root (base_footprint_x has
+        # PhysicsArticulationRootAPI). body1 set, body0 unset => welded to
+        # WORLD => fixed-base articulation. Same pattern G2's robot.usda
+        # uses on base_link. Now base_footprint_x_joint(X) / _y_joint(Y) /
+        # _rz_joint(yaw) translate/rotate base_link in WORLD; z/rx/ry are
+        # left FREE so the base settles on its boundingSphere wheels.
+        def PhysicsFixedJoint "WorldAnchor" (
+            active = true
+        )
+        {
+            rel physics:body1 = </r1pro/base_footprint_x>
+            float physics:breakForce = 3.4028235e38
+            float physics:breakTorque = 3.4028235e38
+            point3f physics:localPos0 = (0, 0, 0)
+            point3f physics:localPos1 = (0, 0, 0)
+        }
+    }
+
+    def Scope "PhysicsMaterials"
+    {
+        def Material "ZeroFrictionWheel" (
+            prepend apiSchemas = ["PhysicsMaterialAPI", "PhysxMaterialAPI"]
+        )
+        {
+            # NOT exactly 0: literally-frictionless contact is a PhysX
+            # contact-solver edge case (deterministic Kit shutdown mid-run
+            # with combineMode=min => 0). 0.02 is still effectively
+            # frictionless for locomotion (resists ~0.02*690 ~= 14 N vs
+            # the ~80 N rate-limited position drive) but keeps the solver
+            # on its normal path.
+            float physics:dynamicFriction = 0.02
+            float physics:staticFriction = 0.02
+            float physics:restitution = 0
+            # min => effective friction = min(0.02, ground~0.5) = 0.02,
+            # so the welded spheres slide nearly freely; the virtual
+            # joints do all the locomotion (the intended holonomic model).
+            uniform token physxMaterial:frictionCombineMode = "min"
+        }
+    }
+
+    over "wheel_motor_link1"
+    {
+        over "collisions" (
+            prepend apiSchemas = ["MaterialBindingAPI"]
+        )
+        {
+            rel material:binding:physics = </r1pro/PhysicsMaterials/ZeroFrictionWheel>
+        }
+    }
+    over "wheel_motor_link2"
+    {
+        over "collisions" (
+            prepend apiSchemas = ["MaterialBindingAPI"]
+        )
+        {
+            rel material:binding:physics = </r1pro/PhysicsMaterials/ZeroFrictionWheel>
+        }
+    }
+    over "wheel_motor_link3"
+    {
+        over "collisions" (
+            prepend apiSchemas = ["MaterialBindingAPI"]
+        )
+        {
+            rel material:binding:physics = </r1pro/PhysicsMaterials/ZeroFrictionWheel>
+        }
+    }
+}
