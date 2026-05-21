@@ -149,20 +149,56 @@ class Gripper:
         return True
 
     def release(self, ctx) -> None:
+        """Synchronous full release: open fingers + unweld + detach all at
+        once. Used by the R-key env-reset path (sim/app.py) where there's
+        no time budget for a phased open. The Release SKILL splits this
+        into release_open() + release_unweld() with a wait window between
+        so the fingers physically clear the plate before the FixedJoint is
+        deleted (otherwise plate is still in finger contact when it goes
+        free, and the fast PD open swing can flick it sideways)."""
         if self._held is None:
             return
-        # Carry-integrity check: if the cube slipped out during the carry,
-        # |ee - object| will be large / object z near the floor.
         ee_p, _ = self._robot.ee_world_pose(ctx)
         obj_p, _ = ctx.scene.object_pose(self._held)
         d = float(np.linalg.norm(np.asarray(ee_p) - np.asarray(obj_p)))
         print(f"[gripper] at release: |ee-object|={d:.4f} m  "
               f"object_z={float(obj_p[2]):.3f} (held OK if small & z>0.5)")
         if self.mode == "assist":
-            self._unweld(ctx)  # delete the FixedJoint
+            self._unweld(ctx)
         self._robot.arm.detach_payload()
-        self._robot.set_gripper(close=False)  # open the fingers (position)
+        self._robot.set_gripper(close=False)
         print(f"[gripper] released {self._held}")
+        self._held = None
+
+    # ---- phased release (used by the Release skill in normal task flow) ---
+    def release_open(self, ctx) -> None:
+        """Phase 1 of phased release: open the fingers ONLY. Weld stays in
+        place so the plate is rigidly held (no friction needed) while the
+        PD-driven fingers slowly swing open and clear the plate."""
+        if self._held is None:
+            return
+        ee_p, _ = self._robot.ee_world_pose(ctx)
+        obj_p, _ = ctx.scene.object_pose(self._held)
+        d = float(np.linalg.norm(np.asarray(ee_p) - np.asarray(obj_p)))
+        print(f"[gripper] release_open: |ee-object|={d:.4f} m  "
+              f"object_z={float(obj_p[2]):.3f}")
+        # Switch to position-open target; PD drives the fingers wide over
+        # the next ~0.5-2 s (slow because the carry-time effort cap is
+        # ~300 N + KD=1e3 -> terminal vel ~0.3 rad/s).
+        self._robot.set_gripper(close=False)
+        print(f"[gripper] fingers PD-opening; weld still holds {self._held}")
+
+    def release_unweld(self, ctx) -> None:
+        """Phase 2 of phased release: now that the fingers have moved off
+        the plate, delete the FixedJoint and detach the cuRobo payload.
+        Plate becomes a free dynamic body and falls onto the place
+        surface."""
+        if self._held is None:
+            return
+        if self.mode == "assist":
+            self._unweld(ctx)
+        self._robot.arm.detach_payload()
+        print(f"[gripper] release_unweld: weld removed; {self._held} is free")
         self._held = None
 
     # ---- assist-mode rigid weld (grasp_mode: assist) ----------------------

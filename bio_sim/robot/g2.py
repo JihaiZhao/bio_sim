@@ -51,6 +51,16 @@ class G2Robot(RobotBase):
             ["idx81_gripper_r_outer_joint1"] if "_r_" in self.ee_link
             else ["idx41_gripper_l_outer_joint1"])
         self.grip_cmd_joint = self.grip_cmd_joints[0]
+        # Mimic follower: inner_joint1 is slaved to outer_joint1 with
+        # multiplier=-1. Not commanded directly, but reset_gripper needs to
+        # SNAP it to -outer + zero velocity so cross-run state matches the
+        # first-run state exactly (otherwise the second run starts with the
+        # inner finger still near the prior grasp pose + non-zero residual
+        # velocity, which the mimic constraint then resolves over a few
+        # ticks -- enough to skew the friction-close timing).
+        self.grip_passive_joints = (
+            ["idx71_gripper_r_inner_joint1"] if "_r_" in self.ee_link
+            else ["idx31_gripper_l_inner_joint1"])
         # Base spawn pose (x, y, yaw); overlaid from cfg.robot_start in
         # _apply_base_start, applied once when the NavController is
         # created and on the R-key env reset.
@@ -139,6 +149,48 @@ class G2Robot(RobotBase):
         self._grip_hold_pos = None
         self.set_gripper(close=False)
         self._initialized = True
+
+    def reset_gripper(self) -> None:
+        """G2 override: ALSO snap the mimic inner-joint follower and ZERO
+        finger velocities. The base reset_gripper only writes the DRIVEN
+        outer joint -- inner_joint1 (PhysxMimicJointAPI:rotX, slave =
+        -outer) is left wherever the prior grasp closed it, and the mimic
+        constraint then has to resolve the asymmetry over several PhysX
+        ticks. That transient is exactly the cross-run state drift that
+        makes the same _CLOSE_TICKS land the fingers in different places
+        on the first run vs after-reset run."""
+        if self._robot is None or self._grip_idxs is None:
+            return
+        # Active (outer) joint(s) + passive (inner mimic) joint(s).
+        outer_idx = list(self._grip_idxs)
+        passive_idx = [self._robot.get_dof_index(n)
+                       for n in self.grip_passive_joints]
+        all_idx = outer_idx + passive_idx
+        # outer -> +GRIP_OPEN_Q, inner -> -GRIP_OPEN_Q (mimic mult=-1).
+        positions = np.concatenate([
+            np.full(len(outer_idx), self.GRIP_OPEN_Q, dtype=np.float32),
+            np.full(len(passive_idx), -self.GRIP_OPEN_Q, dtype=np.float32),
+        ])
+        self._robot.set_joint_positions(positions, all_idx)
+        # Zero residual velocities -- otherwise PhysX integrates the
+        # carry-over velocity (from the prior close) for a few ticks before
+        # PD damps it out, and that shifts the effective close window.
+        try:
+            self._robot.set_joint_velocities(
+                np.zeros(len(all_idx), dtype=np.float32), all_idx)
+        except Exception as exc:  # noqa: BLE001
+            print(f"[reset_gripper] zero-velocity skipped: {exc}")
+        # Re-establish position mode + open target so PD holds it open.
+        self._grip_state = "open"
+        self._grip_close = False
+        self._grip_hold_pos = None
+        # Force the mode-switch path even if _grip_mode is already
+        # "position" so switch_dof_control_mode + set_gains hit the
+        # articulation view -- the prior run's drive cache may otherwise
+        # leak into the new run.
+        self._grip_mode = None
+        self._sync_grip_mode("position")
+        self._apply_gripper()
 
     def reset_arm(self) -> None:
         """Snap BOTH arms back to the retract/init pose and hold there
