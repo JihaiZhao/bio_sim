@@ -45,7 +45,7 @@ def main():
 
     # 2. now safe to import the heavy layers
     from bio_sim.runner import SkillRunner
-    from bio_sim.scene import BioScene
+    from bio_sim.scene import OtOneScene
     from bio_sim.robot.registry import resolve
     from bio_sim.skills import SkillContext
     from bio_sim.tasks import build_pick_place, load_full_cfg
@@ -62,7 +62,13 @@ def main():
 
     # 3. build the world (declarative: fixtures come from the cfg recipe,
     #    resolved through the shared asset library / SIM_ASSETS)
-    scene = BioScene.from_cfg(cfg)
+    # OtOneScene = BioScene + an OT-One mounted on table A; the plate
+    # spawns ON the OT-One deck (between the 4 frame columns) instead of
+    # directly on the table top. Layout math is the same as BioScene's so
+    # the existing task_pick_place.yaml + robots/<robot>.yaml work
+    # unchanged (grasp z == release z is preserved by lowering table A
+    # by the OT-One deck offset). See bio_sim/scene/ot_one_scene.py.
+    scene = OtOneScene.from_cfg(cfg)
     scene.build(sim)
 
     yml = args.robot if args.robot is not None else spec.default_curobo_yml

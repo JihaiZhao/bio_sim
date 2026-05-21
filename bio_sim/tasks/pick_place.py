@@ -44,14 +44,14 @@ _ROBOT_CFG_DIR = os.path.join(_CFG_DIR, "robots")
 # fixed by the validated layout (robot_start.y and nav_dx); the back-off and
 # final approach are the user's spec. Tune here if you change robot_start /
 # nav_dx so the base still lands on the validated grasp/place poses.
-_FWD_TO_A = 1.0      # spawn y=1.5 -> grasp pose y=0
-_BACK_OFF = 1.0      # pure reverse off the A table (still facing it)
+_FWD_TO_A = 0.85      # spawn y=1.0 -> grasp pose y=0.1 (clears thorlabs table edge)
+_BACK_OFF = 0.85      # pure reverse off the A table (still facing it). MUST equal _FINAL_APPROACH.
 # Last forward leg onto B. GEOMETRICALLY LOCKED to _BACK_OFF: the traverse
 # leg keeps y constant, so the only way the base lands back on the validated
 # place pose (y=0) is final-approach == back-off. NOT an independent knob --
 # derived so it can never desync (a 0.2 m mismatch silently stalls pre-place
 # in the 1500-tick SETTLE deadlock guard, no FAILURE emitted).
-_FINAL_APPROACH = 1.0
+_FINAL_APPROACH = 0.85
 
 
 def load_cfg(path: str | None = None) -> dict:
