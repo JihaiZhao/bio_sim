@@ -7,7 +7,7 @@
 # path in g2_motion_gen_reacher.py is untouched; this only commands the 8
 # wheel DOFs (4 steering + 4 drive), which are disjoint from the arm DOFs.
 #
-# Geometry/limits are from curobo_robot/assets/robot/G2/G2_omnipicker_fixed_dual.urdf;
+# Geometry/limits are from assets/robot/G2/G2_omnipicker_fixed_dual.urdf;
 # the actually-loaded asset is robot.usda, which ships the drive joints as a
 # stiff position drive holding 0 -> configure_drive_modes() MUST switch them
 # to velocity control or the wheels stay locked.

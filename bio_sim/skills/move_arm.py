@@ -75,6 +75,7 @@ class MoveArmTo(Skill):
         self._failed = False
         self._streamed = False
         self._settle = 0
+        self._wait = 0  # ticks spent waiting on the pre-plan static gate
 
     def update(self, ctx: SkillContext) -> Status:
         if self._failed:
@@ -82,11 +83,31 @@ class MoveArmTo(Skill):
 
         if not self._planned:
             if not ctx.robot.robot_static():
+                self._wait += 1
+                if self._wait % 120 == 1:
+                    # DIAGNOSTIC: which non-gripper joint won't settle (or
+                    # NaN -> max(NaN)<0.5 is False -> gate hangs forever).
+                    try:
+                        sjs = ctx.robot._robot.get_joints_state()
+                        v = np.abs(np.asarray(sjs.velocities)[
+                            ctx.robot._nongrip_idx])
+                        j = int(np.nanargmax(v))
+                        nm = ctx.robot._robot.dof_names[
+                            ctx.robot._nongrip_idx[j]]
+                        print(f"[move_arm] {self.name} WAIT {self._wait} "
+                              f"robot_static=False maxv={np.nanmax(v):.3f} "
+                              f"@ {nm}  anyNaN={bool(np.isnan(v).any())}")
+                    except Exception as e:  # noqa: BLE001
+                        print(f"[move_arm] {self.name} WAIT diag err: {e}")
                 return Status.RUNNING  # wait for the base/arm to settle
             self._goal = self._pose_fn(ctx)
+            print(f"[move_arm] {self.name} static OK after {self._wait} "
+                  f"ticks -> planning to {np.round(self._goal[0], 3)}")
             if not ctx.robot.plan_arm_to(*self._goal):
+                print(f"[move_arm] {self.name} plan_arm_to FAILED")
                 self._failed = True
                 return Status.FAILURE
+            print(f"[move_arm] {self.name} plan OK -> streaming")
             self._planned = True
             return Status.RUNNING
 

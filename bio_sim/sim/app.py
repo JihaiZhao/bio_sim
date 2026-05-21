@@ -23,6 +23,62 @@ ROBOT_INIT_UNTIL = 10
 SETTLE_UNTIL = 20
 
 
+class _ResetKey:
+    """Press R in the viewport to reset the env (cube + base back to the
+    validated start) and re-arm the task so the user can replay it without
+    relaunching. Windowed only -- carb keyboard needs the app window."""
+
+    def __init__(self, ctx, runner):
+        import carb.input
+        import omni.appwindow
+
+        self._ctx = ctx
+        self._runner = runner
+        self._kbd = carb.input
+        app_window = omni.appwindow.get_default_app_window()
+        self._keyboard = app_window.get_keyboard()
+        self._input = carb.input.acquire_input_interface()
+        self._sub = self._input.subscribe_to_keyboard_events(
+            self._keyboard, self._on_kbd
+        )
+        print("[reset] press  R  to reset the env (then it re-runs the task)")
+
+    def _on_kbd(self, e):
+        et = self._kbd.KeyboardEventType
+        K = self._kbd.KeyboardInput
+        if e.type == et.KEY_PRESS and e.input == K.R:
+            self._reset()
+        return True
+
+    def _reset(self):
+        ctx = self._ctx
+        try:
+            ctx.robot.gripper.release(ctx)  # detach payload + open fingers
+        except Exception:  # noqa: BLE001
+            pass
+        try:
+            ctx.robot.reset_arm()                # arm back to retract/init
+            ctx.robot.reset_gripper()            # SNAP fingers open (PD lag would
+                                                 # otherwise push plate on rerun)
+            ctx.robot.base.reset_pose(
+                *getattr(ctx.robot, "base_start", (0.0, 0.0, 0.0)))
+            name = ctx.scene.objects[0].name
+            ctx.scene.reset_object(name)
+            ctx.blackboard.pop("held", None)
+        except Exception as exc:  # noqa: BLE001
+            print(f"[reset] env reset failed: {exc}")
+            return
+        self._runner.restart()
+        print("[reset] env reset done")
+
+    def close(self):
+        try:
+            self._input.unsubscribe_to_keyboard_events(
+                self._keyboard, self._sub)
+        except Exception:  # noqa: BLE001
+            pass
+
+
 class SimApp:
     def __init__(self, headless: str | None = None, width: int = 1920, height: int = 1080):
         from isaacsim import SimulationApp  # noqa: WPS433
@@ -70,6 +126,25 @@ class SimApp:
 
         add_extensions(self._app, None)
 
+        # Windowed only: load the GUI extensions that give us a full File menu
+        # (Save / Export / Collect As) and the Script Editor. The default
+        # bio_sim startup is a minimal Kit profile that omits these.
+        if self._headless is None:
+            import omni.kit.app  # noqa: WPS433
+
+            mgr = omni.kit.app.get_app().get_extension_manager()
+            for ext in (
+                "omni.kit.window.file",       # File > Save / Save As / Export
+                "omni.kit.tool.collect",      # File > Collect As...
+                "omni.kit.window.script_editor",
+                "omni.physx.commands",        # right-click > Add > Physics > Colliders Preset
+                "omni.physx.ui",
+            ):
+                try:
+                    mgr.set_extension_enabled_immediate(ext, True)
+                except Exception as exc:  # noqa: BLE001
+                    print(f"[sim] could not enable {ext}: {exc}")
+
     def close(self) -> None:
         self._app.close()
 
@@ -82,9 +157,11 @@ class SimApp:
         3. on_world_sync(step_index)      -- periodic cuRobo obstacle resync
         4. runner.tick(ctx)               -- advance the active skill
         """
+        reset_key = None
         if self._headless is not None:
             self.world.play()  # no Play button in headless
         else:
+            reset_key = _ResetKey(ctx, runner)
             # Windowed: make sure Isaac does NOT auto-start the timeline.
             # Stop it explicitly so nothing (init / settle / task) runs until
             # the user actually clicks Play.
@@ -99,6 +176,7 @@ class SimApp:
             print("=" * 60 + "\n")
 
         printed_play_hint = False
+        printed_done = False
         while self.is_running():
             self.step(render=True)
 
@@ -127,14 +205,18 @@ class SimApp:
             runner.tick(ctx)
 
             if runner.done:
-                status = "FAILED" if runner.failed else "COMPLETE"
-                print(f"[sim] task {status}")
+                if not printed_done:
+                    status = "FAILED" if runner.failed else "COMPLETE"
+                    print(f"[sim] task {status}")
+                    printed_done = True
                 if self._headless is not None:
                     break  # automated run: exit so the result is reported
-                # windowed: keep rendering so the result stays visible
-                print("[sim] idling; close the window to exit")
-                while self.is_running():
-                    self.step(render=True)
-                break
+                # Windowed: keep pumping the sim so the result stays visible
+                # AND the R key can reset + re-run the task (runner.restart()
+                # clears .done, so the loop picks the task back up).
+            else:
+                printed_done = False
 
+        if reset_key is not None:
+            reset_key.close()
         self.close()

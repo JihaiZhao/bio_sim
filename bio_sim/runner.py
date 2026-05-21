@@ -19,6 +19,15 @@ class SkillRunner:
         self.done = False
         self.failed = False
 
+    def restart(self) -> None:
+        """Re-run the whole task from the first skill (the keyboard env-reset
+        calls this so the user can replay without relaunching)."""
+        self._i = 0
+        self._started = False
+        self.done = False
+        self.failed = False
+        print("[runner] restart -> task will re-run from the start")
+
     @property
     def current(self) -> Skill | None:
         if 0 <= self._i < len(self._skills):

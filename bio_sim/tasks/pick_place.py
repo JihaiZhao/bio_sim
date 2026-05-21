@@ -109,7 +109,7 @@ def build_pick_place(cfg: dict | None = None) -> List[Skill]:
         MoveArmTo(MoveArmTo.scene_place(dz=pre_dz),
                   label="pre-place", kinematic=False),
         MoveArmTo(MoveArmTo.scene_place(dz=place_dz),
-                  label="place", kinematic=False),
+                  label="place", kinematic=True),
         Release(obj),
         MoveArmTo(MoveArmTo.gripper_offset(retreat_dz),
                   label="retreat", kinematic=False),

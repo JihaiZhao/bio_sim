@@ -84,6 +84,20 @@ class G2Robot(RobotBase):
         self._robot._articulation_view.initialize()
         self._arm_idx = [self._robot.get_dof_index(x) for x in self.j_names]
         self._robot.set_joint_positions(self.retract_config, self._arm_idx)
+        # Also PIN the PD drive targets to retract_config. set_joint_positions
+        # above only writes sim STATE; the drive target stays at the USD
+        # default (~0). That's invisible while the per-step kinematic
+        # re-assert in base_hold keeps both arms latched -- but the
+        # re-assert is GATED on `_cmd_plan is None`, so the instant the
+        # active arm streams a plan the IDLE arm is left to PD alone and
+        # drifts toward 0 (shoulder roll = 0 = arm sticks out horizontally).
+        # Setting the target now anchors the idle arm at init pose during
+        # the active-arm trajectory.
+        from isaacsim.core.utils.types import ArticulationAction
+        self._art_ctrl.apply_action(ArticulationAction(
+            np.asarray(self.retract_config, dtype=np.float32),
+            joint_indices=np.asarray(self._arm_idx, dtype=np.int32),
+        ))
         # hold retract kinematically until the first reach
         self._arm_hold_pos = np.asarray(self.retract_config, dtype=np.float32)
         self._arm_hold_idx = list(self._arm_idx)

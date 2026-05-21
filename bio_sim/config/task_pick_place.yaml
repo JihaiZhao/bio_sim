@@ -22,6 +22,16 @@ robot_face_yaw_deg: -90.0
 # by their root-relative asset dir (resolved via the asset library /
 # $SIM_ASSETS) + a WORLD pose. No prim geometry is hardcoded here.
 scene:
+  # Graspable object: a USD-backed 96-well plate (~128x85x14.6 mm, ~40 g)
+  # replacing the original 3x10x10 cm proxy cube. The asset is referenced
+  # from assets/objects/well_plate_96/ -- it ships its own RigidBodyAPI +
+  # convexDecomposition collider so _spawn_props doesn't need to attach
+  # those at runtime. NOTE: the plate is THINNER and WIDER than the old
+  # cube, so the per-robot cube_xyz.z and grasp_quat may need a tune --
+  # see bio_sim/config/robots/<robot>.yaml.
+  objects:
+    - name: object_a
+      asset: objects/well_plate_96
   # TWO bio_optica stainers, one OUTBOARD of each board (not between them).
   # `position` = mesh FOOTPRINT CENTRE in world (x,y) + base on z;
   # _spawn_fixtures recentres via the real USD AABB (this asset's mesh sits
@@ -35,18 +45,28 @@ scene:
     - name: bio_optica_a
       asset: objects/bio_optica_aus240plus
       # outer side of board A: x = -0.4 - 1.2 = -1.6
-      position: [-1.6, -0.70, 0.0]
+      position: [-1.5, -1.50, 0.0]
       quaternion: [0.0, 0.0, 0.70710678, 0.70710678]
-      # 1.5x enlarged (sidecar scale 1.0 -> 1.5). _spawn_fixtures applies
+      # 1.7x enlarged (sidecar scale 1.0 -> 1.7). _spawn_fixtures applies
       # scale BEFORE measuring the AABB, so the footprint recentre stays
       # correct and `position` need not change.
-      scale: 1.5
+      scale: 1.7
     - name: bio_optica_b
       asset: objects/bio_optica_aus240plus
-      # outer side of board B: x = 2.1 + 1.2 = 3.3
-      position: [3.3, -0.70, 0.0]
-      quaternion: [0.0, 0.0, 0.70710678, 0.70710678]
-      scale: 1.5
+      position: [3.6, -1.25, -1.43024]
+      quaternion: [0.0, 0.0, 0.0, 1.0]
+      scale: 1.7
+
+# Optional small block placed UNDER the plate (one per table) to lift the
+# plate so the gripper fingers have clearance to slide under its edge at
+# grasp time -- without this, the omnipicker's lower finger hits the table
+# top. Footprint MUST be smaller than the plate (~128 x 85 mm) so the
+# fingers wrap around the plate's long edges, not the riser. Set `null`
+# (or omit) to disable. plate cube_xyz.z is AUTO-LIFTED by size.z so the
+# committed per-robot grasp_quat does not need re-tuning for small risers.
+riser:
+  size: [0.06, 0.06, 0.03]   # x, y, z (m). z = how much the plate lifts.
+  color: [0.85, 0.85, 0.85]  # light grey, distinct from the brown table
 
 pick_marker: A          # navigate here before grasping
 place_marker: B         # navigate here before placing
@@ -57,7 +77,7 @@ retreat_dz: 0.15        # m to lift after releasing
 # Place the carried cube a few cm above the table (planning the gripper+
 # payload exactly to table height collides with the table obstacle); the
 # cube free-falls this gap on release.
-place_clearance_dz: 0.05
+place_clearance_dz: 0.0
 
 # Grasp mechanism: physics | assist
 #   physics = force-controlled friction grasp (validated e2e; realistic).

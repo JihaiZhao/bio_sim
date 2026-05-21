@@ -227,6 +227,28 @@ class RobotBase:
         self._sync_grip_mode("velocity" if close else "position")
         self._apply_gripper()
 
+    def reset_gripper(self) -> None:
+        """KINEMATICALLY snap finger joints to the open aperture and reassert
+        the open PD target. Used by the R-key env reset: `set_gripper(open)`
+        alone only writes a POSITION TARGET, so right after release() the
+        fingers are still near the closed grasp pose and the PD has to
+        converge over many ticks. With the immediate runner.restart() the
+        arm reaches pre-grasp before the fingers fully open -> the lower
+        finger sweeps INTO the plate and pushes it sideways (the "slide on
+        2nd run" bug). Snap-open removes that race window."""
+        if self._robot is None or self._grip_idxs is None:
+            return
+        idx = np.asarray(self._grip_idxs, dtype=np.int32)
+        n = len(self._grip_idxs)
+        q_open = np.full(n, self.GRIP_OPEN_Q, dtype=np.float32)
+        self._robot.set_joint_positions(q_open, list(self._grip_idxs))
+        # Re-establish position mode and target so PD holds it open.
+        self._grip_state = "open"
+        self._grip_close = False
+        self._grip_hold_pos = None
+        self._sync_grip_mode("position")
+        self._apply_gripper()
+
     def clamp_hold(self) -> None:
         """Lock the fingers as a stiff vice at the CURRENTLY-contacted
         aperture (a small squeeze past it) with a high effort cap. Unlike

@@ -9,7 +9,7 @@
 #                   (ee_link = gripper_r_center_link, right arm active)
 #                  config/curobo/configs/robot/G2_omnipicker_fixed_left.yml
 #                   (ee_link = gripper_l_center_link, left arm active)
-#   urdf/usd     : curobo_robot/assets/robot/G2/...
+#   urdf/usd     : assets/robot/G2/...  ($SIM_ASSETS or <repo>/assets)
 #
 # The G2 is a 30+ DOF mobile dual-arm robot. The config freezes torso/head and
 # the passive gripper joints via `lock_joints`, leaving the two 7-DOF arms free,
@@ -56,8 +56,12 @@ _PROJECT_ROOT = os.path.dirname(os.path.dirname(os.path.abspath(__file__)))
 parser.add_argument(
     "--external_asset_path",
     type=str,
-    default=os.path.join(_PROJECT_ROOT, "curobo_robot", "assets"),
-    help="Asset root; config urdf/usd paths (robot/G2/...) resolve under this.",
+    default=os.environ.get(
+        "SIM_ASSETS", os.path.join(_PROJECT_ROOT, "assets")
+    ),
+    help="Asset root; config urdf/usd paths (robot/G2/...) resolve under "
+    "this. Defaults to $SIM_ASSETS or <repo>/assets (robot assets moved "
+    "out of curobo_robot/assets into the shared asset library).",
 )
 parser.add_argument(
     "--external_robot_configs_path",

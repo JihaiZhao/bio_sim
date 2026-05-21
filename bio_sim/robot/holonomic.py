@@ -312,4 +312,127 @@ class HolonomicBaseDriver:
             cur, joint_indices=np.asarray(self.base_idx, dtype=np.int32))
 
 
-__all__ = ["HolonomicBaseDriver", "MAX_LIN_VEL", "MAX_ANG_VEL", "MAX_EFFORT"]
+# Arrival tolerances (match base.py NavController so the Navigate skill
+# advances at the same threshold the G2 path used).
+NAV_POS_TOL = 0.05      # m
+NAV_YAW_TOL = 0.05      # rad (~2.9 deg)
+
+
+class HolonomicNav:
+    """NavController-compatible adapter over HolonomicBaseDriver.
+
+    The pick-place pipeline (NavigateTo skill + R1ProRobot.base_hold)
+    speaks the kinematic NavController contract: set_goal / clear_goal /
+    arrived / set_carrying / step(sim, sim_js) / base_pose / world_to_base
+    / reset_pose. This wraps the DYNAMIC holonomic driver to present that
+    same surface so the skills/task code is robot-agnostic.
+
+    base_pose() returns the TRUE base_link world pose (driver.base_pose()).
+    cuRobo's R1 kinematic root is base_footprint_x with the 6 virtual base
+    joints locked at 0, so its planning root frame coincides with the real
+    base_link frame -- world_to_base/base_to_world are therefore the exact
+    same planar transform G2 uses, just rooted on the moving base_link.
+    """
+
+    def __init__(self, driver: "HolonomicBaseDriver",
+                 carry_lin_scale: float = 0.5,
+                 carry_ang_scale: float = 0.5):
+        self._d = driver
+        self._goal = None                 # (x, y, yaw) world, or None
+        self._carrying = False
+        # full-speed rate caps captured from the driver; scaled while
+        # carrying so the dynamic move stays gentle on the held object.
+        self._v_lin0 = driver.v_lin
+        self._v_ang0 = driver.v_ang
+        self._carry_lin = float(carry_lin_scale)
+        self._carry_ang = float(carry_ang_scale)
+
+    # ---- goal management ---------------------------------------------- #
+    def set_goal(self, x: float, y: float, yaw: float) -> None:
+        self._goal = (float(x), float(y), float(yaw))
+
+    def clear_goal(self) -> None:
+        self._goal = None
+
+    def reset_pose(self, x: float = 0.0, y: float = 0.0,
+                   yaw: float = 0.0) -> None:
+        # A dynamic base can't teleport; best-effort drive back to the pose.
+        self._goal = (float(x), float(y), float(yaw))
+
+    def set_carrying(self, flag: bool) -> None:
+        self._carrying = bool(flag)
+
+    # ---- pose readback (TRUE base_link world) ------------------------- #
+    def base_pose(self):
+        x, y, z, yaw = self._d.base_pose()
+        return x, y, z, yaw
+
+    def arrived(self) -> bool:
+        if self._goal is None:
+            return True
+        gx, gy, gyaw = self._goal
+        x, y, _z, yaw = self._d.base_pose()
+        perr = math.hypot(gx - x, gy - y)
+        yerr = abs(math.atan2(math.sin(gyaw - yaw),
+                              math.cos(gyaw - yaw)))
+        return perr < NAV_POS_TOL and yerr < NAV_YAW_TOL
+
+    # ---- per-step drive (called by R1ProRobot.base_hold) -------------- #
+    def step(self, sim, sim_js) -> None:
+        if self._goal is None or self.arrived():
+            self._d.stop()
+            return
+        # gentle while carrying: shrink the per-step rate-limit.
+        if self._carrying:
+            self._d.v_lin = self._v_lin0 * self._carry_lin
+            self._d.v_ang = self._v_ang0 * self._carry_ang
+        else:
+            self._d.v_lin = self._v_lin0
+            self._d.v_ang = self._v_ang0
+        gx, gy, gyaw = self._goal
+        self._d.drive_to(gx, gy, gyaw, float(sim.physics_dt))
+
+    # ---- frame transforms (planar, rooted on the moving base_link) ---- #
+    def world_to_base(self, p_world, q_world):
+        bx, by, bz, yaw = self._d.base_pose()
+        dx = float(p_world[0]) - bx
+        dy = float(p_world[1]) - by
+        dz = float(p_world[2]) - bz
+        c, s = math.cos(-yaw), math.sin(-yaw)
+        p_base = np.array([c * dx - s * dy, s * dx + c * dy, dz],
+                          dtype=np.float64)
+        h = yaw / 2.0
+        bw, bzq = math.cos(h), math.sin(h)
+        qw, qx, qy, qz = (float(q_world[0]), float(q_world[1]),
+                          float(q_world[2]), float(q_world[3]))
+        rw = bw * qw - (-bzq) * qz
+        rx = bw * qx - (-bzq) * qy
+        ry = bw * qy + (-bzq) * qx
+        rz = bw * qz + (-bzq) * qw
+        q_base = np.array([rw, rx, ry, rz], dtype=np.float64)
+        q_base /= np.linalg.norm(q_base) + 1e-12
+        return p_base, q_base
+
+    def base_to_world(self, p_base, q_base):
+        x, y, z, yaw = self._d.base_pose()
+        c, s = math.cos(yaw), math.sin(yaw)
+        px, py, pz = float(p_base[0]), float(p_base[1]), float(p_base[2])
+        p_world = np.array(
+            [c * px - s * py + x, s * px + c * py + y, pz + z],
+            dtype=np.float64)
+        h = yaw / 2.0
+        bw, bzq = math.cos(h), math.sin(h)
+        qw, qx, qy, qz = (float(q_base[0]), float(q_base[1]),
+                          float(q_base[2]), float(q_base[3]))
+        rw = bw * qw - bzq * qz
+        rx = bw * qx - bzq * qy
+        ry = bw * qy + bzq * qx
+        rz = bw * qz + bzq * qw
+        q_world = np.array([rw, rx, ry, rz], dtype=np.float64)
+        q_world /= np.linalg.norm(q_world) + 1e-12
+        return p_world, q_world
+
+
+__all__ = ["HolonomicBaseDriver", "HolonomicNav",
+           "MAX_LIN_VEL", "MAX_ANG_VEL", "MAX_EFFORT",
+           "NAV_POS_TOL", "NAV_YAW_TOL"]

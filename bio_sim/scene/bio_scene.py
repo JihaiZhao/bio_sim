@@ -21,6 +21,8 @@ from typing import Dict, List, Tuple
 
 import numpy as np
 
+from ..asset_lib import load_object
+
 
 @dataclass
 class ObjectSpec:
@@ -32,6 +34,12 @@ class ObjectSpec:
     # its fingers just swipe.
     scale: Tuple[float, float, float] | None = None
     color: Tuple[float, float, float] = (0.9, 0.1, 0.1)
+    # genie-style root-relative dir of a USD-backed asset (e.g.
+    # "objects/well_plate_96"). When set, _spawn_props references the USD
+    # instead of building a DynamicCuboid; the USD must carry its own
+    # RigidBodyAPI + collider (see assets/objects/<name>/object_parameters.json
+    # for the metadata used here: scaled-size for layout, mass not needed).
+    asset: str | None = None
 
 
 @dataclass
@@ -40,6 +48,20 @@ class TableSpec:
     center: Tuple[float, float, float]
     size: Tuple[float, float, float]
     color: Tuple[float, float, float] = (0.45, 0.3, 0.2)
+
+
+@dataclass
+class FixtureSpec:
+    """A static scene prop loaded from the asset library by its genie-style
+    root-relative `asset` directory (data_info_dir). Pose is WORLD-frame;
+    quaternion is (w, x, y, z). Not a physics body -- furniture/equipment
+    the robot works *at*, mirroring genie's scene/background objects."""
+
+    name: str
+    asset: str                              # e.g. "objects/bio_optica_aus240plus"
+    position: Tuple[float, float, float] = (0.0, 0.0, 0.0)
+    quaternion: Tuple[float, float, float, float] = (1.0, 0.0, 0.0, 0.0)
+    scale: float | None = None              # None -> use the sidecar's scale
 
 
 @dataclass
@@ -67,19 +89,29 @@ DEFAULT_MARKERS = [
     Marker("B", position=(1.0, 0.0, 0.02), yaw=0.0, color=(0.1, 0.4, 0.9)),
 ]
 
-OBJECT_HALF = 0.04           # z half-extent of the box (0.08/2)
-GRASP_CLEARANCE = 0.001      # object bottom barely above table top
+GRASP_CLEARANCE = 0.002      # object bottom barely above table top
 SLAB_THICKNESS = 0.04        # table is a thin slab, not a floor monolith
+# Layout (cube/table world poses, robot facing, A<->B spacing, grasp
+# orientation) is now HARD-CODED via task_pick_place.yaml -- no IK search.
+# These are only fallbacks if a yaml key is missing.
 NAV_DX = 1.0                 # B is A + this many metres along world +x
 
 
 class BioScene:
-    def __init__(self, objects=None, tables=None, markers=None):
+    def __init__(self, objects=None, tables=None, markers=None, fixtures=None):
         self.objects: List[ObjectSpec] = objects or list(DEFAULT_OBJECTS)
         self.tables: List[TableSpec] = tables or list(DEFAULT_TABLES)
+        # Small "risers" (one per table) sit on the table top and lift the
+        # plate so the gripper fingers can wrap its edge -- see riser block
+        # in task_pick_place.yaml. Populated by place_for_validation; empty
+        # = disabled (plate rests directly on the table).
+        self.risers: List[TableSpec] = []
         self.markers: List[Marker] = markers or list(DEFAULT_MARKERS)
+        self.fixtures: List[FixtureSpec] = fixtures or []
+        self._fixture_prims: Dict[str, object] = {}
         self._obj_prims: Dict[str, object] = {}
         self._table_prims: Dict[str, object] = {}
+        self._riser_prims: Dict[str, object] = {}
         self._marker_prims: Dict[str, object] = {}
         self._marker_by_name = {m.name: m for m in self.markers}
         self._usd_help = None
@@ -88,7 +120,49 @@ class BioScene:
         self._sim = None
         # filled by place_for_validation()
         self.place_xyz: Tuple[float, float, float] | None = None
+        self.grasp_xyz: Tuple[float, float, float] | None = None
         self.grasp_q = np.array([1.0, 0.0, 0.0, 0.0])
+        # Cube spawn orientation (w,x,y,z). Was hard-IDENTITY (thin 3cm axis
+        # locked to world X); now a yaml knob so the cube can be rotated to
+        # present its 3cm face to whatever grasp_quat the gripper uses.
+        self.cube_quat = np.array([1.0, 0.0, 0.0, 0.0])
+
+    @classmethod
+    def from_cfg(cls, cfg: dict) -> "BioScene":
+        """Build from a declarative recipe (genie-style): the `scene.fixtures`
+        list references assets by root-relative `asset` dir + a pose; this
+        layer never hardcodes prim geometry for them.
+
+        `scene.objects` (optional) overrides DEFAULT_OBJECTS: each entry may
+        carry an `asset` field to spawn a USD-backed rigid body (see
+        ObjectSpec.asset). place_for_validation still owns the runtime pose
+        (read from cube_xyz / cube_quat), so per-entry `position` is unused
+        for the first object.
+        """
+        recipe = (cfg or {}).get("scene", {}) or {}
+        fixtures = [
+            FixtureSpec(
+                name=f["name"],
+                asset=f["asset"],
+                position=tuple(f.get("position", (0.0, 0.0, 0.0))),
+                quaternion=tuple(f.get("quaternion", (1.0, 0.0, 0.0, 0.0))),
+                scale=f.get("scale"),
+            )
+            for f in recipe.get("fixtures", [])
+        ]
+        objects = None
+        if recipe.get("objects"):
+            objects = [
+                ObjectSpec(
+                    name=o["name"],
+                    position=tuple(o.get("position", (0.0, 0.0, 0.0))),
+                    size=float(o.get("size", 0.05)),
+                    scale=tuple(o["scale"]) if o.get("scale") else None,
+                    asset=o.get("asset"),
+                )
+                for o in recipe["objects"]
+            ]
+        return cls(objects=objects, fixtures=fixtures)
 
     # ---- build --------------------------------------------------------
     def build(self, sim) -> None:
@@ -117,12 +191,25 @@ class BioScene:
                 scale=np.array(t.size, dtype=np.float32),
                 color=np.array(t.color),
             ))
+        # Risers (optional): same primitive type as tables, just smaller and
+        # sat on top. Spawned BEFORE the plate so the plate's RigidBody
+        # settles correctly onto the riser top.
+        for r in self.risers:
+            self._riser_prims[r.name] = sim.world.scene.add(FixedCuboid(
+                prim_path=f"/World/{r.name}", name=r.name,
+                position=np.array(r.center, dtype=np.float32),
+                scale=np.array(r.size, dtype=np.float32),
+                color=np.array(r.color),
+            ))
         # High-friction material so the force-closed fingers can hold it.
         grip_mat = PhysicsMaterial(
             prim_path="/World/PhysicsMaterials/grip",
-            static_friction=1.2, dynamic_friction=1.0, restitution=0.1,
+            static_friction=5.2, dynamic_friction=5.0, restitution=0.1,
         )
         for o in self.objects:
+            if o.asset is not None:
+                self._obj_prims[o.name] = self._spawn_usd_object(o, grip_mat)
+                continue
             # Mass = 0.01 kg, matching genie_sim's ACTUAL value
             # (G2_omnipicker client default 0.01 kg). The earlier note
             # here claimed "genie uses ~0.2 kg" -- that was wrong; genie
@@ -140,7 +227,8 @@ class BioScene:
             cube = sim.world.scene.add(DynamicCuboid(
                 prim_path=f"/World/{o.name}", name=o.name,
                 position=np.array(o.position, dtype=np.float32),
-                color=np.array(o.color), mass=0.3, **kw,
+                orientation=np.array(self.cube_quat, dtype=np.float32),
+                color=np.array(o.color), mass=0.5, **kw,
             ))
             try:
                 cube.apply_physics_material(grip_mat)
@@ -153,6 +241,88 @@ class BioScene:
                 position=np.array(m.position, dtype=np.float32),
                 size=0.08, color=np.array(m.color),
             )
+        self._spawn_fixtures()
+
+    def _spawn_usd_object(self, o: ObjectSpec, grip_mat):
+        """Spawn a USD-backed dynamic object: reference the library asset,
+        wrap it in SingleRigidPrim so the runtime get/set_world_pose +
+        velocity API stays uniform with the DynamicCuboid path, and apply
+        the same grip-friction material as the cube. The referenced USD
+        must already carry RigidBodyAPI + a collider (e.g. baked via the
+        well_plate_96 setup script)."""
+        from isaacsim.core.prims import SingleRigidPrim
+        from isaacsim.core.utils.stage import add_reference_to_stage
+
+        asset = load_object(o.asset)
+        prim_path = f"/World/{o.name}"
+        add_reference_to_stage(usd_path=asset.usd_path, prim_path=prim_path)
+        rigid = SingleRigidPrim(
+            prim_path=prim_path, name=o.name,
+            position=np.array(o.position, dtype=np.float32),
+            orientation=np.array(self.cube_quat, dtype=np.float32),
+        )
+        self._sim.world.scene.add(rigid)
+        try:
+            rigid.apply_physics_material(grip_mat)
+        except Exception as exc:  # noqa: BLE001
+            print(f"[scene] friction material skipped on {o.name}: {exc}")
+        print(f"[scene] object '{o.name}' <- {asset.data_info_dir} "
+              f"size={asset.size} mass={asset.mass}")
+        return rigid
+
+    def _spawn_fixtures(self) -> None:
+        """Reference each library asset's USD onto the stage as a STATIC prop.
+
+        Pose is authored as USD xform ops (version-independent, and not
+        subject to the World physics-reset snap-back that bit the dynamic
+        cube -- a referenced Xform with no rigid body just stays put)."""
+        if not self.fixtures:
+            return
+        from isaacsim.core.utils.stage import add_reference_to_stage
+        from pxr import Gf, Usd, UsdGeom
+
+        stage = self._sim.world.stage
+        for fx in self.fixtures:
+            asset = load_object(fx.asset)
+            prim_path = f"/World/{fx.name}"
+            add_reference_to_stage(usd_path=asset.usd_path,
+                                   prim_path=prim_path)
+            prim = stage.GetPrimAtPath(prim_path)
+            xf = UsdGeom.Xformable(prim)
+            xf.ClearXformOpOrder()
+            px, py, pz = (float(v) for v in fx.position)
+            qw, qx, qy, qz = (float(v) for v in fx.quaternion)
+            s = fx.scale if fx.scale is not None else asset.scale
+
+            # Author orient + scale FIRST with NO translate, so the prim's
+            # world AABB == the oriented/scaled mesh anchored at the origin.
+            # Many lab USDs (this AUS240) have their geometry FAR from the
+            # prim origin -> placing by raw translate puts the visible /
+            # cuRobo-collision mesh nowhere near `position` (the bug: place
+            # IK_FAIL, board never under it). So measure the real mesh AABB
+            # and recenter: `position` then means the mesh FOOTPRINT CENTRE
+            # (x,y) with its BASE on z -- regardless of the asset's origin.
+            t_op = xf.AddTranslateOp()
+            t_op.Set(Gf.Vec3d(0.0, 0.0, 0.0))
+            xf.AddOrientOp().Set(Gf.Quatf(qw, Gf.Vec3f(qx, qy, qz)))
+            xf.AddScaleOp().Set(Gf.Vec3f(float(s), float(s), float(s)))
+
+            bbox = UsdGeom.BBoxCache(
+                Usd.TimeCode.Default(),
+                includedPurposes=[UsdGeom.Tokens.default_,
+                                  UsdGeom.Tokens.render],
+                useExtentsHint=True,
+            ).ComputeWorldBound(prim).ComputeAlignedRange()
+            mn, mx = bbox.GetMin(), bbox.GetMax()
+            cx, cy = 0.5 * (mn[0] + mx[0]), 0.5 * (mn[1] + mx[1])
+            minz = mn[2]
+            t_op.Set(Gf.Vec3d(px - cx, py - cy, pz - minz))
+
+            self._fixture_prims[fx.name] = prim
+            print(f"[scene] fixture '{fx.name}' <- {asset.data_info_dir} "
+                  f"recentred: mesh AABB c=({cx:.2f},{cy:.2f}) minz={minz:.2f}"
+                  f" -> footprint @ ({px:.2f},{py:.2f}) base z={pz:.2f} "
+                  f"scale={s}")
 
     def _build_curobo_world(self) -> None:
         # Initial placeholder world; the periodic stage resync (maybe_sync)
@@ -181,97 +351,99 @@ class BioScene:
         self._usd_help.load_stage(sim.world.stage)
         self._usd_help.add_world_to_stage(self._world_cfg, base_frame="/World")
 
-    # ---- deterministic, reachable placement ---------------------------
+    # ---- hard-coded layout (no IK search) -----------------------------
     def place_for_validation(self, robot, cfg: dict) -> None:
-        """Snap table/object/markers to a provably reachable workspace anchor.
+        """Place cube / table / markers from HARD-CODED config (no IK
+        search). Everything is read straight from task_pick_place.yaml so
+        you tune it by editing numbers, not code:
 
-        Robot starts at world origin (A), so base frame == world frame here.
-        Keep the (IK-checked) retract EE orientation and search a grid of
-        candidate positions; among those where grasp, pre-grasp (+pre_dz)
-        and lift/retreat (+clearance) are ALL IK-feasible, pick the one whose
-        height is CLOSEST to cfg['grasp_height'] (so the robot grasps low at
-        a realistic table height, not up near its shoulder).
-        B := A + (NAV_DX, 0); place mirrors the grasp in B's frame.
+          cube_xyz          cube world position [x, y, z]
+          grasp_quat        gripper world orientation at grasp [w, x, y, z]
+          robot_face_yaw_deg robot yaw at A and B (degrees)
+          table_size        board [len_x, len_y, thickness]
+          nav_dx            B = A + (nav_dx, 0)
+
+        `robot` is unused -- reachability is now YOUR responsibility (tune
+        cube_xyz / grasp_quat / face yaw until the runtime plan succeeds);
+        the old auto-search that "guaranteed" it was removed by request.
         """
-        import numpy as _np
+        ox, oy, oz_cfg = cfg.get("cube_xyz", [0.0, -0.50, 0.84])
+        gq = cfg.get("grasp_quat", [-0.2706, 0.6533, -0.6533, 0.2706])
+        self.cube_quat = np.asarray(
+            cfg.get("cube_quat", [1.0, 0.0, 0.0, 0.0]), dtype=np.float64)
+        face_yaw = float(np.radians(cfg.get("robot_face_yaw_deg", -90.0)))
+        tsx, tsy, tsz = cfg.get(
+            "table_size", [0.40, 0.40, SLAB_THICKNESS])
+        nav_dx = float(cfg.get("nav_dx", NAV_DX))
 
-        pre_dz = cfg["pre_grasp_dz"]
-        lift_dz = cfg["lift_dz"]
-        want_z = cfg.get("grasp_height", 0.75)
+        # Optional riser block under the plate (see task_pick_place.yaml
+        # `riser`). Plate is AUTO-LIFTED by riser_h so its bottom rests on
+        # the riser top, while the table top stays at its no-riser height.
+        riser_cfg = cfg.get("riser") or {}
+        riser_size = tuple(riser_cfg.get("size") or (0.0, 0.0, 0.0))
+        riser_h = float(riser_size[2])
+        riser_color = tuple(riser_cfg.get("color", (0.85, 0.85, 0.85)))
+        oz = oz_cfg + riser_h
 
-        p_ee, q_ee = robot.arm.retract_link_pose(
-            robot.retract_config, robot.j_names, robot.ee_link
-        )
-        self.grasp_q = q_ee.copy()
-        # make ik_ok enforce the same idle-arm pin plan_single uses
-        robot.arm.compute_idle_retract_pin(robot.retract_config, robot.j_names)
+        self.grasp_q = np.asarray(gq, dtype=np.float64)
 
-        clearance = max(lift_dz, pre_dz)
-        # Build candidates, try them ordered by closeness to the desired
-        # height; accept the FIRST where grasp + pre-grasp + lift all
-        # actually plan (real plan_single, idle pinned) and early-exit.
-        z_lo = max(0.30, want_z - 0.20)
-        z_hi = min(float(p_ee[2]) + 1e-6, want_z + 0.35)
-        cands = []
-        for shrink in (1.0, 0.85, 0.7, 0.55):
-            for z in _np.arange(z_lo, z_hi, 0.05):
-                cands.append(_np.array(
-                    [p_ee[0] * shrink, p_ee[1] * shrink, z], dtype=_np.float64))
-        cands.sort(key=lambda c: (abs(c[2] - want_z), -c[0]))
-
-        anchor = None
-        for ci, c in enumerate(cands):
-            if (robot.arm.plan_ok(c, q_ee)
-                    and robot.arm.plan_ok(c + [0, 0, pre_dz], q_ee)
-                    and robot.arm.plan_ok(c + [0, 0, clearance], q_ee)):
-                anchor = c
-                print(f"[scene] anchor found after {ci + 1} candidates; "
-                      f"z={c[2]:.3f} (target {want_z})")
-                break
-        if anchor is None:
-            anchor = _np.array(p_ee, dtype=_np.float64)
-            print("[scene] WARNING: no plannable anchor found; "
-                  "falling back to retract FK")
-
-        # `anchor` is a BASE-frame target validated by plan_ok. Runtime reads
-        # the object's WORLD pose and converts via world_to_base, which
-        # subtracts the base standing height. So place the object in WORLD at
-        # anchor + BASE_STAND_Z; then world_to_base recovers exactly `anchor`
-        # (base at A is x=y=yaw=0, z=BASE_STAND_Z). Without this the runtime
-        # grasp goal is BASE_STAND_Z below the validated pose -> IK_FAIL.
-        from ..robot.base import BASE_STAND_Z
-
-        ox, oy = float(anchor[0]), float(anchor[1])
-        oz = float(anchor[2]) + BASE_STAND_Z
         obj = self.objects[0]
         obj.position = (ox, oy, oz)
 
-        # table = a THIN slab whose top sits just under the object. A
-        # floor-to-top monolith would intersect the robot's own collision
-        # spheres (the anchor is only ~0.5 m from the base) and fail IK.
-        top = oz - OBJECT_HALF - GRASP_CLEARANCE
-        tcx, tcy = ox, oy
+        # Board top sits just under the object so it rests flush on the
+        # board. Half-extent comes from: USD asset sidecar (size in m) for
+        # asset-backed objects, otherwise the procedural cube's scale/size.
+        if obj.asset is not None:
+            obj_half_z = float(load_object(obj.asset).size[2]) / 2.0
+        elif obj.scale is not None:
+            obj_half_z = obj.scale[2] / 2.0
+        else:
+            obj_half_z = obj.size / 2.0
+        # `top` = table top z. With no riser this is just plate_bottom -
+        # GRASP_CLEARANCE (the old formula). With a riser, the table stays
+        # PUT (table top unchanged) and the riser fills the gap up to the
+        # lifted plate bottom -- so subtract riser_h to undo the oz lift.
+        top = oz - obj_half_z - GRASP_CLEARANCE - riser_h
         tA = self.tables[0]
-        tA.center = (tcx, tcy, top - SLAB_THICKNESS / 2.0)
-        tA.size = (0.40, 0.40, SLAB_THICKNESS)
+        tA.center = (ox, oy, top - tsz / 2.0)
+        tA.size = (tsx, tsy, tsz)
 
-        # B and table_B: same geometry shifted +NAV_DX in world x
+        # A at world origin, B = A + (nav_dx, 0); both face `face_yaw`.
         self._marker_by_name["A"].position = (0.0, 0.0, 0.02)
-        self._marker_by_name["A"].yaw = 0.0
-        self._marker_by_name["B"].position = (NAV_DX, 0.0, 0.02)
-        self._marker_by_name["B"].yaw = 0.0
-        self.place_xyz = (ox + NAV_DX, oy, oz)
+        self._marker_by_name["A"].yaw = face_yaw
+        self._marker_by_name["B"].position = (nav_dx, 0.0, 0.02)
+        self._marker_by_name["B"].yaw = face_yaw
+        self.place_xyz = (ox + nav_dx, oy, oz)
+        self.grasp_xyz = (ox, oy, oz)  # A-side point (R-key reset)
         tB = self.tables[1]
-        tB.center = (tcx + NAV_DX, tcy, top - SLAB_THICKNESS / 2.0)
+        tB.center = (ox + nav_dx, oy, top - tsz / 2.0)
         tB.size = tA.size
 
-        # Specs are now final -> spawn the prims AT these poses, so Isaac
-        # records them as the default state (no Play snap-back / floor drop).
+        # Riser specs: one per table, footprint = riser size (smaller than
+        # the plate), bottom flush with table top. Populated only when the
+        # riser is configured; empty list disables the feature.
+        self.risers = []
+        if riser_h > 0:
+            rsx, rsy, rsz = float(riser_size[0]), float(riser_size[1]), riser_h
+            riser_cz = top + rsz / 2.0
+            self.risers = [
+                TableSpec(name="riser_A",
+                          center=(ox, oy, riser_cz),
+                          size=(rsx, rsy, rsz),
+                          color=riser_color),
+                TableSpec(name="riser_B",
+                          center=(ox + nav_dx, oy, riser_cz),
+                          size=(rsx, rsy, rsz),
+                          color=riser_color),
+            ]
+
+        # Specs are final -> spawn the prims AT these poses (no snap-back).
         self._spawn_props()
 
-        print(f"[scene] validation layout: object/grasp @ "
-              f"({ox:.3f},{oy:.3f},{oz:.3f})  "
-              f"table_top={top:.3f}  place @ {self.place_xyz}")
+        print(f"[scene] HARD-CODED layout: cube @ ({ox:.3f},{oy:.3f},"
+              f"{oz:.3f})  grasp_q={list(np.round(self.grasp_q, 4))}  "
+              f"face_yaw={cfg.get('robot_face_yaw_deg', -90.0)}deg  "
+              f"place @ {self.place_xyz}")
 
     # ---- queries ------------------------------------------------------
     def object_pose(self, name: str) -> Tuple[np.ndarray, np.ndarray]:
@@ -281,10 +453,25 @@ class BioScene:
     def object_prim(self, name: str):
         return self._obj_prims[name]
 
+    def reset_object(self, name: str) -> None:
+        """Snap the cube back to its validated A-side grasp pose with zero
+        velocity (so a looped run repeats the exact validated scenario)."""
+        prim = self._obj_prims[name]
+        p = np.array(self.grasp_xyz, dtype=np.float32)
+        q = np.array(self.cube_quat, dtype=np.float32)  # same as spawn
+        prim.set_world_pose(position=p, orientation=q)
+        for setter in ("set_linear_velocity", "set_angular_velocity"):
+            try:
+                getattr(prim, setter)(np.zeros(3, dtype=np.float32))
+            except Exception:  # noqa: BLE001
+                pass
+
     def object_dims(self, name: str):
         """(x, y, z) extents for the cuRobo payload box."""
         for o in self.objects:
             if o.name == name:
+                if o.asset is not None:
+                    return list(load_object(o.asset).size)
                 if o.scale is not None:
                     return list(o.scale)
                 return [o.size, o.size, o.size]
@@ -304,11 +491,12 @@ class BioScene:
         ignore = [robot_prim_path, "/World/defaultGroundPlane", "/curobo"]
         ignore += [f"/World/{o.name}" for o in self.objects]
         ignore += [f"/World/marker_{m.name}" for m in self.markers]
-        # The validation table is a PHYSICAL rest surface, not a planning
-        # obstacle: as a cuRobo obstacle the thin slab right under the cube
-        # blocks the hand from descending to a low grasp (IK_FAIL). Excluding
-        # it also makes setup-time IK match runtime planning.
-        ignore += [f"/World/{t.name}" for t in self.tables]
+        # Tables WERE ignored historically: the thin slab right under the
+        # cube blocked the old sideways grasp from descending to a low pose
+        # (IK_FAIL). With the new top-down grasp_quat the lower finger now
+        # sweeps INTO the board if cuRobo doesn't see it, so the table is
+        # included as an obstacle again. If a future low-side grasp comes
+        # back, re-evaluate per-grasp instead of toggling here globally.
         obstacles = self._usd_help.get_obstacles_from_stage(
             only_paths=["/World"],
             reference_prim_path=robot_prim_path,
