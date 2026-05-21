@@ -14,6 +14,15 @@ dependencies = [
     # Pulls Isaac Sim 5.1 via the `isaacsim` extra:
     #   isaacsim[all,extscache]==5.1.0.*  (from pypi.nvidia.com)
     "isaaclab[isaacsim,all]==2.3.2.post1",
+    # cuRobo: editable install from third_party/curobo (CUDA extension builds
+    # on first sync). MUST be declared here -- otherwise `uv sync` wipes it
+    # from the env as undeclared, taking down g2/r1pro/robot_base imports.
+    # Source path is in [tool.uv.sources] below.
+    "nvidia-curobo",
+    # CLI (python -m bio_sim {list,run}). tyro builds the command tree from
+    # the @dataclass commands in bio_sim/cli.py; rich is pulled transitively
+    # by tyro and used directly for the `list` tables.
+    "tyro>=0.9",
 ]
 
 [tool.uv]
@@ -37,3 +46,4 @@ explicit = true
 [tool.uv.sources]
 torch = { index = "pytorch-cu128" }
 torchvision = { index = "pytorch-cu128" }
+nvidia-curobo = { path = "third_party/curobo", editable = true }

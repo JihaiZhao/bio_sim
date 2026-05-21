@@ -1,10 +1,11 @@
-"""bio_sim — G2 mobile-manipulation pick-and-place on Isaac Sim 5.1 + cuRobo.
+"""bio_sim — mobile-manipulation pick-and-place on Isaac Sim 5.1 + cuRobo.
 
 Layering (high -> low):
-    play.py            entrypoint, wires everything
+    cli.py / __main__  entrypoint: `python -m bio_sim {list,run}`
+    specs.py           robot / scene / task registries (metadata only)
     tasks/             ordered skill lists (PickAndPlace)
     skills/            tick state machines (NavigateTo, MoveArmTo, Grasp...)
-    robot/             G2Robot facade (arm planner / base / gripper / bridge)
+    robot/             G2Robot / R1ProRobot facades (arm / base / gripper)
     scene/             declarative environment (ground, table, objects)
     sim/               SimulationApp + World runtime
 

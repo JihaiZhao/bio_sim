@@ -4,7 +4,9 @@
 #
 # CRITICAL ORDERING: SimulationApp() must be constructed before torch / curobo
 # / any isaacsim.core import (the RTX + Kit plugins initialize in the ctor).
-# So play.py builds SimApp first, then imports robot/scene/skill modules.
+# So bio_sim/cli.py builds SimApp first, then load_ref()'s the registry-
+# selected robot/scene/task classes (which are what transitively import the
+# heavy deps). Same constraint applies to grasp_probe.py / nav_probe.py.
 #
 # Isaac Sim 5.1 native namespace is isaacsim.core.* (the old omni.isaac.core
 # survives only as a deprecated shim). New code uses the native namespace.

@@ -37,7 +37,8 @@ from ..skills.navigate import DriveStraight, FaceYaw
 from ..skills.skill import Skill
 
 _CFG_DIR = os.path.join(os.path.dirname(__file__), "..", "config")
-_CFG = os.path.join(_CFG_DIR, "task_pick_place.yaml")
+_DEFAULT_TASK_CFG = "task_pick_place.yaml"   # filename under _CFG_DIR
+_CFG = os.path.join(_CFG_DIR, _DEFAULT_TASK_CFG)
 _ROBOT_CFG_DIR = os.path.join(_CFG_DIR, "robots")
 
 # Scripted base-path distances (metres). Forward-to-A and the traverse are
@@ -66,9 +67,11 @@ def load_robot_cfg(name: str, path: str | None = None) -> dict:
         return yaml.safe_load(f) or {}
 
 
-def load_full_cfg(robot: str) -> dict:
-    # Shared task config + per-robot overlay (overlay keys win).
-    cfg = load_cfg()
+def load_full_cfg(robot: str, task_cfg_file: str = _DEFAULT_TASK_CFG) -> dict:
+    # Shared task config + per-robot overlay (overlay keys win). `task_cfg_file`
+    # is the task yaml filename under bio_sim/config/ (the TaskSpec.config_file
+    # field) -- defaulted so existing callers passing only `robot` keep working.
+    cfg = load_cfg(os.path.join(_CFG_DIR, task_cfg_file))
     cfg.update(load_robot_cfg(robot))
     return cfg
 

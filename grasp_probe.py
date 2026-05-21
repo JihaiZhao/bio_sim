@@ -168,13 +168,14 @@ def main():
     from curobo.types.math import Pose
     from curobo.types.state import JointState
 
-    from bio_sim.robot.registry import resolve
     from bio_sim.scene import BioScene
+    from bio_sim.specs import ROBOTS, load_ref
     from bio_sim.tasks import load_full_cfg
 
     # Probe is R1-only -> resolve through the registry so the yml and
     # cfg overlay both come from one source of truth.
-    spec = resolve("r1pro")
+    spec = ROBOTS["r1pro"]
+    RobotCls = load_ref(spec.cls_ref)
     cfg = load_full_cfg(spec.cfg_overlay)
 
     # fast no-graph cuRobo warmup (probe only uses enable_graph=False
@@ -191,7 +192,7 @@ def main():
 
     scene = BioScene.from_cfg(cfg)
     scene.build(sim)
-    robot = spec.cls(robot_yml=spec.default_curobo_yml)
+    robot = RobotCls(robot_yml=spec.default_curobo_yml)
     robot.apply_init_pose(cfg)
     robot.load_into(sim, scene)            # builds cuRobo kinematics
     scene.place_for_validation(robot, cfg)  # sets the cube world pose
