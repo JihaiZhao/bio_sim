@@ -14,20 +14,11 @@ from .skill import Skill, SkillContext, Status
 
 
 class NavigateTo(Skill):
-    def __init__(self, x: float, y: float, yaw: float = 0.0, marker: str | None = None):
+    def __init__(self, x: float, y: float, yaw: float = 0.0):
         self._x, self._y, self._yaw = x, y, yaw
-        self._marker = marker
-        self.name = f"NavigateTo({marker or f'{x:.2f},{y:.2f}'})"
-
-    @classmethod
-    def to_marker(cls, scene_marker_name: str) -> "NavigateTo":
-        # resolved at start() once the scene is in ctx
-        s = cls(0.0, 0.0, 0.0, marker=scene_marker_name)
-        return s
+        self.name = f"NavigateTo({x:.2f},{y:.2f})"
 
     def start(self, ctx: SkillContext) -> None:
-        if self._marker is not None:
-            self._x, self._y, self._yaw = ctx.scene.marker_pose(self._marker)
         ctx.robot.base.set_goal(self._x, self._y, self._yaw)
 
     def update(self, ctx: SkillContext) -> Status:

@@ -2,8 +2,8 @@
 # OtOneScene: pick-and-place across TWO OT-Ones on Thorlabs lab tables.
 #
 # Scene composition (FIXED, ignores scene.fixtures + scene.objects in cfg):
-#   * Two Thorlabs 75x90 tables (assets/objects/table-thorlabs-75x90/), one
-#     at marker A and one at marker B, nav_dx apart along world +X.
+#   * Two Thorlabs 75x90 tables (assets/objects/table-thorlabs-75x90/),
+#     nav_dx apart along world +X.
 #   * Two Opentrons OT-One frames (assets/objects/ot_one/), one mounted on
 #     each table. Each has 286 mesh colliders for cuRobo obstacle world.
 #   * One 96-well plate (assets/objects/well_plate_96/) spawned ON the
@@ -12,7 +12,7 @@
 #
 # No bio_optica stainers, no risers -- those live in BioScene's task.
 #
-# Subclasses BioScene so the entire pick-place API (markers, grasp_q,
+# Subclasses BioScene so the entire pick-place API (grasp_q,
 # grasp_xyz, place_xyz, object_pose/reset_object, maybe_sync) is inherited;
 # only the LAYOUT is overridden in place_for_validation.
 #
@@ -20,6 +20,8 @@
 #
 
 from __future__ import annotations
+
+from typing import Dict, Tuple
 
 import numpy as np
 
@@ -68,14 +70,41 @@ OT_ONE_ASSET = "objects/ot_one"
 # a "different asset" from Hydra's POV. Same geometry as objects/ot_one/.
 OT_ONE_B_ASSET = "objects/ot_one_b"
 
-# Thorlabs 75x90 lab table: 0.9 m x 0.76 m, 0.795 m tall, Z-up, m-per-unit
-# 1.0. After _spawn_fixtures recentering, the BASE is at the supplied pz
-# and the TOP is at pz + 0.795.
+# Thorlabs 75x90 lab table: 0.9 m x 0.76 m, ~0.795 m tall, Z-up, m-per-unit
+# 1.0. After _spawn_fixtures recentering, the BASE is at the supplied pz.
+# THORLABS_HEIGHT is the FLAT tabletop height (densest vertex plane at asset
+# Z=-0.0127m), NOT the AABB max (Z=0). The mounting block sitting on the
+# breadboard adds 12.7mm above the flat top; using the AABB max would float
+# anything stacked on top by that same 12.7mm.
 THORLABS_ASSET = "objects/table-thorlabs-75x90"
-THORLABS_HEIGHT = 0.795
+THORLABS_HEIGHT = 0.782
+
+# ---------------------------------------------------------------------------
+# cuRobo cage thicknesses (mirrored from DemoScene -- same OT-One geometry).
+# The OT-One USD's 26 CollisionAPI-tagged meshes cover deck slots / inner
+# pieces but MISS the four corner alu profile frames, the lower compartment
+# walls, and the deck plate itself, so mesh-filter alone left the trajectory
+# free to thread through the OT-One body sideways. Replace the 286-mesh
+# geometry with a 7-cuboid proxy cage that PhysX-style hollow-boxes the
+# OT-One. Base extends THROUGH the deck region (5.35 cm = deck_top - 1 cm)
+# so side-entry trajectories at deck height get blocked, while still
+# leaving a 1 cm slice so the gripper descends OK to place plates on the
+# deck. Sides above stay open between corner pillars for above-deck side
+# entry.
+OT_CAGE_PILLAR_T = 0.05
+OT_CAGE_BASE_T = DECK_TOP_ABOVE_BASE - 0.01      # ~5.35 cm
+OT_CAGE_TOP_T = 0.06
 
 
 class OtOneScene(BioScene):
+    def __init__(self, *args, **kwargs):
+        super().__init__(*args, **kwargs)
+        # OT-One world AABBs (footprint center xy, base z, world extents)
+        # cached during _spawn_fixtures so maybe_sync can build the cuRobo
+        # cage. Keyed by fixture name.
+        self._otone_aabbs: Dict[
+            str, Tuple[float, float, float, float, float, float]] = {}
+
     def place_for_validation(self, robot, cfg: dict) -> None:
         """Build the two-table OT-One layout from cfg.
 
@@ -97,7 +126,6 @@ class OtOneScene(BioScene):
         gq = cfg.get("grasp_quat", [-0.2706, 0.6533, -0.6533, 0.2706])
         self.cube_quat = np.asarray(
             cfg.get("cube_quat", [1.0, 0.0, 0.0, 0.0]), dtype=np.float64)
-        face_yaw = float(np.radians(cfg.get("robot_face_yaw_deg", -90.0)))
         nav_dx = float(cfg.get("nav_dx", NAV_DX))
 
         self.grasp_q = np.asarray(gq, dtype=np.float64)
@@ -128,14 +156,6 @@ class OtOneScene(BioScene):
         plate_y = oy + PLATE_FORWARD_OFFSET_Y
         obj.position = (plate_x, plate_y, oz)
 
-        # Markers: A at world origin, B at (nav_dx, 0). Same as BioScene.
-        self._marker_by_name["A"].position = (0.0, 0.0, 0.02)
-        self._marker_by_name["A"].yaw = face_yaw
-        self._marker_by_name["B"].position = (nav_dx, 0.0, 0.02)
-        self._marker_by_name["B"].yaw = face_yaw
-        # Grasp/place at the actual plate xy (incl. forward offset), not at
-        # the OT-One/table centre. Same offset applies at marker B so the
-        # release point lines up with the deck-front position on table B.
         self.grasp_xyz = (plate_x, plate_y, oz)
         self.place_xyz = (plate_x + nav_dx, plate_y, oz)
 
@@ -228,6 +248,13 @@ class OtOneScene(BioScene):
             t_op.Set(Gf.Vec3d(px - cx, py - cy, pz - mn[2]))
 
             self._fixture_prims[fx.name] = prim
+            if fx.name.startswith("ot_one"):
+                self._otone_aabbs[fx.name] = (
+                    float(px), float(py), float(pz),
+                    float(mx[0] - mn[0]),
+                    float(mx[1] - mn[1]),
+                    float(mx[2] - mn[2]),
+                )
             print(f"[ot_one_scene] fixture '{fx.name}' <- {asset.data_info_dir} "
                   f"recentred: AABB c=({cx:.2f},{cy:.2f}) minz={mn[2]:.2f} "
                   f"-> footprint @ ({px:.2f},{py:.2f}) base z={pz:.2f} scale={s}")
@@ -256,24 +283,86 @@ class OtOneScene(BioScene):
                     attr = rb.CreateKinematicEnabledAttr(True, writeSparsely=False)
                 attr.Set(True)
 
+    def _build_otone_curobo_cages(self) -> list:
+        """7-cuboid proxy cage per OT-One (4 corner pillars + base slab + 2
+        top X-edges). Replaces the OT-One's 286-mesh / 26-collider USD in
+        cuRobo's world so trajectories don't thread through the alu frame
+        or the deck plate (neither of which are CollisionAPI-tagged)."""
+        from curobo.geom.types import Cuboid
+
+        cubes: list = []
+        for name, (px, py, pz, w, d, h) in self._otone_aabbs.items():
+            pt, bt, tt = OT_CAGE_PILLAR_T, OT_CAGE_BASE_T, OT_CAGE_TOP_T
+            for sx in (-1, 1):
+                for sy in (-1, 1):
+                    cubes.append(Cuboid(
+                        name=f"{name}_pillar_{'p' if sx > 0 else 'n'}"
+                             f"{'p' if sy > 0 else 'n'}",
+                        pose=[
+                            px + sx * (w / 2 - pt / 2),
+                            py + sy * (d / 2 - pt / 2),
+                            pz + h / 2,
+                            1.0, 0.0, 0.0, 0.0,
+                        ],
+                        dims=[pt, pt, h],
+                    ))
+            cubes.append(Cuboid(
+                name=f"{name}_base",
+                pose=[px, py, pz + bt / 2, 1.0, 0.0, 0.0, 0.0],
+                dims=[w, d, bt],
+            ))
+            for sx in (-1, 1):
+                cubes.append(Cuboid(
+                    name=f"{name}_top_{'p' if sx > 0 else 'n'}",
+                    pose=[
+                        px + sx * (w / 2 - tt / 2),
+                        py,
+                        pz + h - tt / 2,
+                        1.0, 0.0, 0.0, 0.0,
+                    ],
+                    dims=[tt, d, tt],
+                ))
+        return cubes
+
+    # First-sync step. MUST be AFTER the base finishes navigating in
+    # pick_place: get_obstacles_from_stage(reference_prim_path=robot) bakes
+    # obstacle poses into the BASE frame AT SYNC TIME, and plan_to_world_pose
+    # converts targets via world_to_base() at plan time. If the base moves
+    # between sync and plan, the stored obstacle frame is stale and cuRobo
+    # plans through the real obstacle. Step 50 is empirically after
+    # FaceYaw + DriveStraight complete. Do NOT lower this for a task that
+    # navigates -- only safe for no-nav tasks (see demo_scene which syncs
+    # at step 5 because its skill list has no base motion).
+    _SYNC_STEP = 50
+
     def maybe_sync(self, step_index: int, arm, robot_prim_path: str) -> None:
-        """Same as BioScene.maybe_sync. The two OT-One fixtures and the
-        two Thorlabs tables are NOT in the ignore list -- they become
-        cuRobo obstacles. Markers + plate stay ignored (graspable target /
-        navigation visualisation).
-        """
-        if not (step_index == 50 or step_index % 1000 == 0):
+        """One-shot sync at _SYNC_STEP: ingest Thorlabs tables + cage-proxied
+        OT-Ones into cuRobo's collision world. The two OT-Ones are skipped
+        entirely from the USD-mesh pass (their 286-mesh / 26-collider USDs
+        leave the alu frame + deck plate un-collided) and replaced with a
+        7-cuboid cage each (see _build_otone_curobo_cages)."""
+        if step_index != self._SYNC_STEP:
             return
         if step_index == self._last_sync:
             return
         self._last_sync = step_index
         ignore = [robot_prim_path, "/World/defaultGroundPlane", "/curobo"]
         ignore += [f"/World/{o.name}" for o in self.objects]
-        ignore += [f"/World/marker_{m.name}" for m in self.markers]
+        ignore += [f"/World/{name}" for name in self._otone_aabbs]
         obstacles = self._usd_help.get_obstacles_from_stage(
             only_paths=["/World"],
             reference_prim_path=robot_prim_path,
             ignore_substring=ignore,
         ).get_collision_check_world()
+
+        cage = self._build_otone_curobo_cages()
+        if obstacles.cuboid is None:
+            obstacles.cuboid = []
+        obstacles.cuboid.extend(cage)
+
+        meshes = obstacles.mesh or []
+        cuboids = obstacles.cuboid or []
+        print(f"[ot_one_scene] cuRobo world: meshes={len(meshes)} "
+              f"cuboids={len(cuboids)} cage={len(cage)}")
         arm.sync_world(obstacles)
         print(f"[ot_one_scene] cuRobo world resynced @ step {step_index}")

@@ -27,7 +27,7 @@ class SkillContext:
 
     world : bio_sim.sim.app.SimApp   (owns the Isaac World; .step(), dt, etc.)
     robot : bio_sim.robot.g2.G2Robot (facade: .arm .base .gripper, world frame)
-    scene : bio_sim.scene.bio_scene.BioScene (object/marker world poses)
+    scene : bio_sim.scene.bio_scene.BioScene (object world poses)
     blackboard : free-form dict for cross-skill state (e.g. grasped object)
     """
 

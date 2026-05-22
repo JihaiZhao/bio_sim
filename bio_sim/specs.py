@@ -73,6 +73,12 @@ SCENES: dict[str, SceneSpec] = {
         description="BioScene + plate on OT-One deck at table A",
         cls_ref="bio_sim.scene.ot_one_scene:OtOneScene",
     ),
+    "demo": SceneSpec(
+        name="demo",
+        description="Single OT-One on one table; plate on table top, "
+                    "place into OT-One deck; optional visual mirrors along +X",
+        cls_ref="bio_sim.scene.demo_scene:DemoScene",
+    ),
 }
 
 
@@ -83,6 +89,14 @@ TASKS: dict[str, TaskSpec] = {
         builder_ref="bio_sim.tasks.pick_place:build_pick_place",
         config_file="task_pick_place.yaml",
         compatible_scenes=("bio", "ot_one"),
+    ),
+    "demo": TaskSpec(
+        name="demo",
+        description="Pure-arm pick (table top) -> place (OT-One deck); "
+                    "base does not move. For demo recording.",
+        builder_ref="bio_sim.tasks.demo:build_demo",
+        config_file="task_demo.yaml",
+        compatible_scenes=("demo",),
     ),
 }
 

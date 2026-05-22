@@ -4,9 +4,9 @@
 # robot's retract FK and mirrors it at B. Offsets come from
 # config/task_pick_place.yaml; the structure is generic.
 #
-# The base path is now SCRIPTED with relative moves (FaceYaw / DriveStraight)
-# instead of NavigateTo-marker, per the user's spec. The numbers are tied to
-# the validated layout (see the table below): the base must end EXACTLY at
+# The base path is SCRIPTED with relative moves (FaceYaw / DriveStraight).
+# The numbers are tied to the validated layout (see the table below): the
+# base must end EXACTLY at
 # the validated grasp pose (0,0) and place pose (nav_dx,0) or the arm IK
 # fails -- those constraints fix every distance.
 #
@@ -45,14 +45,14 @@ _ROBOT_CFG_DIR = os.path.join(_CFG_DIR, "robots")
 # fixed by the validated layout (robot_start.y and nav_dx); the back-off and
 # final approach are the user's spec. Tune here if you change robot_start /
 # nav_dx so the base still lands on the validated grasp/place poses.
-_FWD_TO_A = 0.85      # spawn y=1.0 -> grasp pose y=0.1 (clears thorlabs table edge)
-_BACK_OFF = 0.85      # pure reverse off the A table (still facing it). MUST equal _FINAL_APPROACH.
+_FWD_TO_A = 0.9      # spawn y=1.0 -> grasp pose y=0.1 (clears thorlabs table edge)
+_BACK_OFF = 0.9      # pure reverse off the A table (still facing it). MUST equal _FINAL_APPROACH.
 # Last forward leg onto B. GEOMETRICALLY LOCKED to _BACK_OFF: the traverse
 # leg keeps y constant, so the only way the base lands back on the validated
 # place pose (y=0) is final-approach == back-off. NOT an independent knob --
 # derived so it can never desync (a 0.2 m mismatch silently stalls pre-place
 # in the 1500-tick SETTLE deadlock guard, no FAILURE emitted).
-_FINAL_APPROACH = 0.85
+_FINAL_APPROACH = 0.9
 
 
 def load_cfg(path: str | None = None) -> dict:
@@ -68,11 +68,32 @@ def load_robot_cfg(name: str, path: str | None = None) -> dict:
 
 
 def load_full_cfg(robot: str, task_cfg_file: str = _DEFAULT_TASK_CFG) -> dict:
-    # Shared task config + per-robot overlay (overlay keys win). `task_cfg_file`
-    # is the task yaml filename under bio_sim/config/ (the TaskSpec.config_file
-    # field) -- defaulted so existing callers passing only `robot` keep working.
+    # Merge order (later wins):
+    #   1. shared task yaml          (task_demo.yaml / task_pick_place.yaml)
+    #   2. per-robot overlay         (robots/<robot>.yaml)
+    #   3. per-(robot,task) overlay  (robots/<robot>_<task>.yaml, if present)
+    #
+    # The task-specific overlay (step 3) lets one robot have different
+    # grasp_xyz / robot_start / etc. per task -- e.g. g2 in pick_place
+    # spawns and drives to the table, but g2 in demo is ALREADY parked at
+    # the work pose. Without step 3 the two tasks would fight over the
+    # same per-robot file.
+    #
+    # `task_cfg_file` doubles as the task-name source: we strip the leading
+    # 'task_' and trailing '.yaml' to get the short task name used in the
+    # overlay filename. So 'task_demo.yaml' -> 'demo' -> 'robots/g2_demo.yaml'.
     cfg = load_cfg(os.path.join(_CFG_DIR, task_cfg_file))
     cfg.update(load_robot_cfg(robot))
+    task_name = task_cfg_file
+    if task_name.startswith("task_"):
+        task_name = task_name[len("task_"):]
+    if task_name.endswith(".yaml"):
+        task_name = task_name[: -len(".yaml")]
+    overlay_path = os.path.join(_ROBOT_CFG_DIR, f"{robot}_{task_name}.yaml")
+    if os.path.exists(overlay_path):
+        with open(overlay_path, "r") as f:
+            task_overlay = yaml.safe_load(f) or {}
+        cfg.update(task_overlay)
     return cfg
 
 

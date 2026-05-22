@@ -2,14 +2,14 @@
 # BioScene: declarative environment.
 #
 # Validation scene (before real bio assets): a big FixedCuboid = table, a
-# small DynamicCuboid = object, two floor markers A/B. Every pose is KNOWN
-# and, more importantly, DERIVED from the robot's retract-config forward
-# kinematics in place_for_validation(): the nominal grasp target equals the
-# retract EE pose, so IK cannot fail on it. The place leg mirrors the grasp
-# in the B base frame, so it is equally reachable.
+# small DynamicCuboid = object. Every pose is KNOWN and, more importantly,
+# DERIVED from the robot's retract-config forward kinematics in
+# place_for_validation(): the nominal grasp target equals the retract EE
+# pose, so IK cannot fail on it. The place leg mirrors the grasp in the B
+# base frame, so it is equally reachable.
 #
-# Adding real assets later = extend OBJECTS / TABLES / MARKERS (or subclass);
-# the loop never changes.
+# Adding real assets later = extend OBJECTS / TABLES (or subclass); the
+# loop never changes.
 #
 # Frame: world frame, quaternions (w, x, y, z) (cuRobo / Isaac convention).
 #
@@ -61,15 +61,14 @@ class FixtureSpec:
     asset: str                              # e.g. "objects/bio_optica_aus240plus"
     position: Tuple[float, float, float] = (0.0, 0.0, 0.0)
     quaternion: Tuple[float, float, float, float] = (1.0, 0.0, 0.0, 0.0)
-    scale: float | None = None              # None -> use the sidecar's scale
+    # float -> uniform; 3-tuple -> per-axis (x, y, z); None -> sidecar scale.
+    scale: float | Tuple[float, float, float] | None = None
 
 
-@dataclass
-class Marker:
-    name: str
-    position: Tuple[float, float, float]
-    yaw: float = 0.0
-    color: Tuple[float, float, float] = (0.2, 0.8, 0.2)
+def _scale3(s) -> Tuple[float, float, float]:
+    if isinstance(s, (int, float)):
+        return (float(s), float(s), float(s))
+    return (float(s[0]), float(s[1]), float(s[2]))
 
 
 # Placeholders; place_for_validation() overwrites every pose from the robot's
@@ -84,10 +83,6 @@ DEFAULT_TABLES = [
     TableSpec("table_A", center=(0.5, 0.0, 0.2), size=(0.4, 0.4, 0.4)),
     TableSpec("table_B", center=(1.5, 0.0, 0.2), size=(0.4, 0.4, 0.4)),
 ]
-DEFAULT_MARKERS = [
-    Marker("A", position=(0.0, 0.0, 0.02), yaw=0.0, color=(0.1, 0.8, 0.1)),
-    Marker("B", position=(1.0, 0.0, 0.02), yaw=0.0, color=(0.1, 0.4, 0.9)),
-]
 
 GRASP_CLEARANCE = 0.002      # object bottom barely above table top
 SLAB_THICKNESS = 0.04        # table is a thin slab, not a floor monolith
@@ -98,7 +93,7 @@ NAV_DX = 1.0                 # B is A + this many metres along world +x
 
 
 class BioScene:
-    def __init__(self, objects=None, tables=None, markers=None, fixtures=None):
+    def __init__(self, objects=None, tables=None, fixtures=None):
         self.objects: List[ObjectSpec] = objects or list(DEFAULT_OBJECTS)
         self.tables: List[TableSpec] = tables or list(DEFAULT_TABLES)
         # Small "risers" (one per table) sit on the table top and lift the
@@ -106,14 +101,11 @@ class BioScene:
         # in task_pick_place.yaml. Populated by place_for_validation; empty
         # = disabled (plate rests directly on the table).
         self.risers: List[TableSpec] = []
-        self.markers: List[Marker] = markers or list(DEFAULT_MARKERS)
         self.fixtures: List[FixtureSpec] = fixtures or []
         self._fixture_prims: Dict[str, object] = {}
         self._obj_prims: Dict[str, object] = {}
         self._table_prims: Dict[str, object] = {}
         self._riser_prims: Dict[str, object] = {}
-        self._marker_prims: Dict[str, object] = {}
-        self._marker_by_name = {m.name: m for m in self.markers}
         self._usd_help = None
         self._world_cfg = None
         self._last_sync = -1
@@ -166,7 +158,7 @@ class BioScene:
 
     # ---- build --------------------------------------------------------
     def build(self, sim) -> None:
-        # Only the ground + cuRobo world here. The object/tables/markers are
+        # Only the ground + cuRobo world here. The object/tables are
         # spawned LATER (place_for_validation) directly at their resolved
         # poses: Isaac records a prim's default state at add() time and
         # snaps back to it on Play, so spawning at the default pose and
@@ -180,7 +172,6 @@ class BioScene:
         from isaacsim.core.api.objects import (
             DynamicCuboid,
             FixedCuboid,
-            VisualCuboid,
         )
 
         sim = self._sim
@@ -235,12 +226,6 @@ class BioScene:
             except Exception as exc:  # noqa: BLE001
                 print(f"[scene] friction material skipped: {exc}")
             self._obj_prims[o.name] = cube
-        for m in self.markers:
-            self._marker_prims[m.name] = VisualCuboid(
-                prim_path=f"/World/marker_{m.name}", name=f"marker_{m.name}",
-                position=np.array(m.position, dtype=np.float32),
-                size=0.08, color=np.array(m.color),
-            )
         self._spawn_fixtures()
 
     def _spawn_usd_object(self, o: ObjectSpec, grip_mat):
@@ -292,7 +277,8 @@ class BioScene:
             xf.ClearXformOpOrder()
             px, py, pz = (float(v) for v in fx.position)
             qw, qx, qy, qz = (float(v) for v in fx.quaternion)
-            s = fx.scale if fx.scale is not None else asset.scale
+            sx, sy, sz = _scale3(
+                fx.scale if fx.scale is not None else asset.scale)
 
             # Author orient + scale FIRST with NO translate, so the prim's
             # world AABB == the oriented/scaled mesh anchored at the origin.
@@ -305,7 +291,7 @@ class BioScene:
             t_op = xf.AddTranslateOp()
             t_op.Set(Gf.Vec3d(0.0, 0.0, 0.0))
             xf.AddOrientOp().Set(Gf.Quatf(qw, Gf.Vec3f(qx, qy, qz)))
-            xf.AddScaleOp().Set(Gf.Vec3f(float(s), float(s), float(s)))
+            xf.AddScaleOp().Set(Gf.Vec3f(sx, sy, sz))
 
             bbox = UsdGeom.BBoxCache(
                 Usd.TimeCode.Default(),
@@ -322,7 +308,7 @@ class BioScene:
             print(f"[scene] fixture '{fx.name}' <- {asset.data_info_dir} "
                   f"recentred: mesh AABB c=({cx:.2f},{cy:.2f}) minz={minz:.2f}"
                   f" -> footprint @ ({px:.2f},{py:.2f}) base z={pz:.2f} "
-                  f"scale={s}")
+                  f"scale=({sx},{sy},{sz})")
 
     def _build_curobo_world(self) -> None:
         # Initial placeholder world; the periodic stage resync (maybe_sync)
@@ -353,7 +339,7 @@ class BioScene:
 
     # ---- hard-coded layout (no IK search) -----------------------------
     def place_for_validation(self, robot, cfg: dict) -> None:
-        """Place cube / table / markers from HARD-CODED config (no IK
+        """Place cube / tables from HARD-CODED config (no IK
         search). Everything is read straight from task_pick_place.yaml so
         you tune it by editing numbers, not code:
 
@@ -371,7 +357,6 @@ class BioScene:
         gq = cfg.get("grasp_quat", [-0.2706, 0.6533, -0.6533, 0.2706])
         self.cube_quat = np.asarray(
             cfg.get("cube_quat", [1.0, 0.0, 0.0, 0.0]), dtype=np.float64)
-        face_yaw = float(np.radians(cfg.get("robot_face_yaw_deg", -90.0)))
         tsx, tsy, tsz = cfg.get(
             "table_size", [0.40, 0.40, SLAB_THICKNESS])
         nav_dx = float(cfg.get("nav_dx", NAV_DX))
@@ -408,11 +393,6 @@ class BioScene:
         tA.center = (ox, oy, top - tsz / 2.0)
         tA.size = (tsx, tsy, tsz)
 
-        # A at world origin, B = A + (nav_dx, 0); both face `face_yaw`.
-        self._marker_by_name["A"].position = (0.0, 0.0, 0.02)
-        self._marker_by_name["A"].yaw = face_yaw
-        self._marker_by_name["B"].position = (nav_dx, 0.0, 0.02)
-        self._marker_by_name["B"].yaw = face_yaw
         self.place_xyz = (ox + nav_dx, oy, oz)
         self.grasp_xyz = (ox, oy, oz)  # A-side point (R-key reset)
         tB = self.tables[1]
@@ -477,20 +457,29 @@ class BioScene:
                 return [o.size, o.size, o.size]
         return [0.05, 0.05, 0.05]
 
-    def marker_pose(self, name: str) -> Tuple[float, float, float]:
-        m = self._marker_by_name[name]
-        return m.position[0], m.position[1], m.yaw
-
     # ---- periodic cuRobo obstacle resync ------------------------------
+    # First-sync step. MUST be AFTER the base finishes navigating in
+    # pick_place: get_obstacles_from_stage(reference_prim_path=robot) bakes
+    # obstacle poses into the BASE frame AT SYNC TIME. If the base then
+    # moves before MoveArmTo plans, the stored obstacle frame is stale and
+    # cuRobo plans straight through the real obstacle. Step 50 is
+    # empirically after FaceYaw + DriveStraight complete. Do NOT lower
+    # for navigating tasks. The 1000-step periodic resync handles long
+    # tasks where the base drifts during execution. (Sub-classes that
+    # know they have no nav phase -- e.g. DemoScene -- override the
+    # whole method with an earlier first sync.)
+    _SYNC_STEP_FIRST = 50
+    _SYNC_STEP_PERIOD = 1000
+
     def maybe_sync(self, step_index: int, arm, robot_prim_path: str) -> None:
-        if not (step_index == 50 or step_index % 1000 == 0):
+        if not (step_index == self._SYNC_STEP_FIRST
+                or step_index % self._SYNC_STEP_PERIOD == 0):
             return
         if step_index == self._last_sync:
             return
         self._last_sync = step_index
         ignore = [robot_prim_path, "/World/defaultGroundPlane", "/curobo"]
         ignore += [f"/World/{o.name}" for o in self.objects]
-        ignore += [f"/World/marker_{m.name}" for m in self.markers]
         # Tables WERE ignored historically: the thin slab right under the
         # cube blocked the old sideways grasp from descending to a low pose
         # (IK_FAIL). With the new top-down grasp_quat the lower finger now

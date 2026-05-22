@@ -34,12 +34,26 @@ class MoveArmTo(Skill):
     # ---- common pose providers ---------------------------------------
     @staticmethod
     def grasp_pose(name: str, dz: float = 0.0):
-        """Object position (+dz) with the scene's reachable grasp orientation
-        (the object spawns at identity quaternion, which may be infeasible)."""
+        """EE goal at the object's TOP face (+dz), with the scene's reachable
+        grasp orientation.
+
+        object_pose() returns the prim's WORLD ORIGIN. For the well_plate USD
+        the prim origin is at the plate BOTTOM (local AABB minZ=0), so after
+        physics settle the returned z = deck_top. Targeting that z would put
+        the EE at deck level and drive the lower finger into the OT-One's
+        deck-plate collider -> IK_FAIL. Adding object_dims(name)[2] anchors
+        the target at plate TOP instead. dz then = standoff above the plate
+        top (pre-grasp = +12 cm, grasp = 0).
+
+        Assumes prim origin at object bottom. If a future object spawns at
+        its geometric centre, the caller has to subtract half-height itself.
+        """
         def fn(ctx):
             p, _ = ctx.scene.object_pose(name)
             p = np.array(p, dtype=np.float64)
-            p[2] += dz
+            h = float(ctx.scene.object_dims(name)[2])
+            print("the height of the object", h)
+            p[2] += h + dz
             return p, np.asarray(ctx.scene.grasp_q, dtype=np.float64)
         return fn
 

@@ -1,0 +1,43 @@
+# Demo task: 1 OT-One on 1 Thorlabs table; plate goes from table top into
+# the OT-One deck. Base does NOT move -- robot_start (per-robot overlay)
+# IS the work pose. Shared knobs only; per-robot overlay supplies the
+# grasp/place poses (workspace differs by robot).
+
+object: object_a
+
+# Pre/post offsets for the approach + lift + retreat (m, all in +z world).
+pre_grasp_dz: 0.12
+lift_dz: 0.15
+retreat_dz: 0.15
+# Tiny gap above the deck on release so the plate's own collider settles
+# onto the deck without an interpenetration impulse.
+place_clearance_dz: 0.005
+
+# Place target = OT-One DECK CENTRE + this xy offset (metres). [0, 0] drops
+# the plate dead centre on the deck. Forward-of-centre (toward the robot
+# when robot faces -Y) is -y, e.g. [0.0, -0.05].
+place_offset_xy: [0.0, 0.2]
+
+# Visual multi-env backdrop. num_envs=1 = the demo as a single scene; >1
+# spawns extra (table+OT-One+plate) STATIC copies along +X for cinematic
+# scale. Mirrors are NOT animated -- this is just visual decoration. A
+# true N-robot synced demo needs the Isaac-Lab-style Cloner restructuring
+# that is NOT part of this task (filed under bio_sim future work).
+num_envs: 1
+env_spacing: 1.5
+
+# Declarative scene recipe: the 96-well plate, same asset bio uses.
+scene:
+  objects:
+    - name: object_a
+      asset: objects/well_plate_96
+
+# Grasp mechanism: physics | assist.
+#   physics = friction-only. Realistic but the kinematic base teleport
+#             can fly the plate off mid-carry (see gripper.py header).
+#   assist  = friction close + UsdPhysics.FixedJoint weld at the live
+#             contact pose -> the plate rigidly follows the gripper.
+# Demo defaults to assist for the "100% success" videos the demo exists
+# to capture. Flip to physics if you specifically want to show the
+# realistic-friction failure mode.
+grasp_mode: assist

@@ -10,7 +10,7 @@ object: object_a
 # ===== HARD-CODED LAYOUT (edit these to move things) ==================
 # Board footprint + thickness [len_x, len_y, thickness] (metres).
 table_size: [0.40, 0.40, 0.04]
-# B (place) marker = A + (nav_dx, 0) in world x. Boards sit nav_dx apart;
+# Board B = board A + (nav_dx, 0) in world x. Boards sit nav_dx apart;
 # bio_optica fixtures auto-flank both boards (see scene.fixtures below --
 # update those positions if you change this).
 nav_dx: 4.5
@@ -67,9 +67,6 @@ scene:
 riser:
   size: [0.06, 0.06, 0.03]   # x, y, z (m). z = how much the plate lifts.
   color: [0.85, 0.85, 0.85]  # light grey, distinct from the brown table
-
-pick_marker: A          # navigate here before grasping
-place_marker: B         # navigate here before placing
 
 pre_grasp_dz: 0.12      # m above the grasp for the approach / pre-place
 lift_dz: 0.15           # m to lift after grasping (clears the table)
