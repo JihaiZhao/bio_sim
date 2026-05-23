@@ -254,6 +254,11 @@ def _run(cmd: Run) -> None:
         )
         print(f"[cli] cloned env_0 -> {num_envs - 1} replica(s) "
               f"at +X spacing={env_spacing:.2f}")
+    # Phase 3: stash num_envs / env_spacing on the robot. The broadcast
+    # Articulation view itself is built lazily in ensure_initialized
+    # (after world.play()) so its constructor sees a live physics sim
+    # view and eagerly inits without a race against STOP-event teardown.
+    robot.set_multi_env(num_envs, env_spacing=env_spacing)
     robot.finalize_physics(sim)
     scene.attach_to_stage(sim)
     sim.add_extensions()

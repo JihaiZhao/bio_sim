@@ -142,9 +142,27 @@ class SwerveBaseController:
     and must be called once after the articulation view is initialized.
     """
 
-    def __init__(self, robot, articulation_view):
+    def __init__(self, robot, articulation_view,
+                 av=None, num_envs: int = 1, env_spacing: float = 0.0,
+                 robot_facade=None):
         self._robot = robot
         self._view = articulation_view
+        # Phase 3: when multi-env is active, _av is the broadcast view
+        # across /World/env_*/<robot> and writes go through it. env_offsets
+        # places env_i's base at robot_start + (i*env_spacing, 0, 0).
+        # robot_facade (RobotBase) exposes broadcast_view() so we can
+        # refresh the AV's _physics_view each tick when prim-deletion
+        # events tear it down.
+        self._av = av
+        self._robot_facade = robot_facade
+        self._num_envs = int(num_envs)
+        if num_envs > 1:
+            self._env_offsets = np.array(
+                [[i * env_spacing, 0.0, 0.0] for i in range(num_envs)],
+                dtype=np.float32,
+            )
+        else:
+            self._env_offsets = None
         self.steer_idx = [robot.get_dof_index(STEER_JOINTS[n]) for n in MODULE_ORDER]
         self.drive_idx = [robot.get_dof_index(DRIVE_JOINTS[n]) for n in MODULE_ORDER]
         self._configured = False
@@ -153,25 +171,53 @@ class SwerveBaseController:
         self._pose = None  # (x, y, yaw), lazy-init from current root pose
         self._z = None
 
+    def _live_view(self):
+        """Return the broadcast Articulation if it's healthy; falls back
+        to the env_0 single-articulation view. The facade re-attaches
+        _physics_view on the AV when prim-deletion events tear it down."""
+        if self._robot_facade is not None:
+            av = self._robot_facade.broadcast_view()
+            if av is not None:
+                return av
+        return self._view
+
+    def _set_root_pose(self, pos, quat) -> None:
+        """Teleport the kinematic base root. Multi-env: broadcast
+        env_i to (pos + env_offsets[i], quat). Single-env: vanilla
+        Robot.set_world_pose."""
+        if (self._robot_facade is not None and self._env_offsets is not None
+                and self._num_envs > 1):
+            av = self._robot_facade.broadcast_view()
+            if av is not None:
+                n = self._num_envs
+                positions = (np.asarray(pos, dtype=np.float32)
+                             + self._env_offsets).astype(np.float32)
+                orientations = np.tile(
+                    np.asarray(quat, dtype=np.float32), (n, 1))
+                av.set_world_poses(positions, orientations)
+                return
+        self._robot.set_world_pose(position=pos, orientation=quat)
+
     def configure_drive_modes(self):
         if self._configured:
             return
-        view = self._view
+        view = self._live_view()
+        n = self._num_envs if view is not self._view else 1
         steer_idx = np.asarray(self.steer_idx, dtype=np.int32)
         drive_idx = np.asarray(self.drive_idx, dtype=np.int32)
 
-        # set_gains expects (M, K) with M = #prims (=1 here).
+        # set_gains expects (M, K) with M = #articulations in the view.
         view.set_gains(
-            kps=np.full((1, 4), STEER_KP, dtype=np.float32),
-            kds=np.full((1, 4), STEER_KD, dtype=np.float32),
+            kps=np.full((n, 4), STEER_KP, dtype=np.float32),
+            kds=np.full((n, 4), STEER_KD, dtype=np.float32),
             joint_indices=steer_idx,
         )
         view.set_gains(
-            kps=np.full((1, 4), DRIVE_KP, dtype=np.float32),
-            kds=np.full((1, 4), DRIVE_KD, dtype=np.float32),
+            kps=np.full((n, 4), DRIVE_KP, dtype=np.float32),
+            kds=np.full((n, 4), DRIVE_KD, dtype=np.float32),
             joint_indices=drive_idx,
         )
-        # switch_dof_control_mode takes a single dof int -> loop.
+        # switch_dof_control_mode broadcasts to all envs by default.
         for di in self.steer_idx:
             view.switch_dof_control_mode("position", di)
         for di in self.drive_idx:
@@ -179,7 +225,10 @@ class SwerveBaseController:
 
         try:
             view.set_max_efforts(
-                values=np.full(8, WHEEL_MAX_EFFORT, dtype=np.float32),
+                values=np.tile(
+                    np.full(8, WHEEL_MAX_EFFORT, dtype=np.float32), (n, 1)
+                ) if n > 1 else
+                np.full(8, WHEEL_MAX_EFFORT, dtype=np.float32),
                 joint_indices=np.asarray(
                     self.steer_idx + self.drive_idx, dtype=np.int32
                 ),
@@ -234,10 +283,10 @@ class SwerveBaseController:
         )
         pos = np.array([x, y, self._z], dtype=np.float32)
         try:
-            self._robot.set_world_pose(position=pos, orientation=quat)
+            self._set_root_pose(pos, quat)
         except Exception as e:
             if DEBUG:
-                print(f"[kbase] set_world_pose failed: {e}")
+                print(f"[kbase] set root pose failed: {e}")
 
         # Visual-only wheel steering/spin.
         steer_t, wheel_v = swerve_ik(vx, vy, w, cur_steer)
@@ -310,24 +359,23 @@ class SwerveBaseController:
             )
 
     def _apply(self, idx, positions=None, velocities=None):
-        view = self._view
+        view = self._live_view()
+        n = self._num_envs if view is not self._view else 1
         idx_arr = np.asarray(idx, dtype=np.int32)
         # Prefer the typed-targets API; fall back to ArticulationActions.
         if positions is not None:
+            vals = np.asarray(positions, dtype=np.float32).reshape(-1)
+            tiled = np.tile(vals, (n, 1)) if n > 1 else vals.reshape(1, -1)
             setter = getattr(view, "set_joint_position_targets", None)
             if setter is not None:
-                setter(
-                    np.asarray(positions, dtype=np.float32).reshape(1, -1),
-                    joint_indices=idx_arr,
-                )
+                setter(tiled, joint_indices=idx_arr)
                 return
         if velocities is not None:
+            vals = np.asarray(velocities, dtype=np.float32).reshape(-1)
+            tiled = np.tile(vals, (n, 1)) if n > 1 else vals.reshape(1, -1)
             setter = getattr(view, "set_joint_velocity_targets", None)
             if setter is not None:
-                setter(
-                    np.asarray(velocities, dtype=np.float32).reshape(1, -1),
-                    joint_indices=idx_arr,
-                )
+                setter(tiled, joint_indices=idx_arr)
                 return
         from omni.isaac.core.utils.types import ArticulationActions
 

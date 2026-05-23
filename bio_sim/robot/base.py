@@ -111,9 +111,9 @@ class NavController:
                          math.sin(yaw / 2.0)], dtype=np.float32)
         pos = np.array([x, y, BASE_STAND_Z], dtype=np.float32)
         try:
-            self.swerve._robot.set_world_pose(position=pos, orientation=quat)
+            self.swerve._set_root_pose(pos, quat)
         except Exception as exc:  # noqa: BLE001
-            print(f"[base] reset_pose set_world_pose failed: {exc}")
+            print(f"[base] reset_pose set root pose failed: {exc}")
         self._goal = None
         self._reverse = False
         self._phase = self._DONE

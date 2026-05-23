@@ -123,6 +123,12 @@ class RobotBase:
         self._view = None
         self._initialized = False
         self._nongrip_idx = None
+        # Phase 3: broadcast view across /World/env_*/<robot>. Reads stay
+        # on self._robot (env_0 only -- cuRobo plans on env_0 state);
+        # writes go through self._av so every cloned env stays in sync.
+        # Built post-clone in cli.py via build_articulation_view().
+        self._av = None
+        self._num_envs = 1
 
         # Active-arm trajectory stream.
         self._cmd_plan = None
@@ -280,6 +286,140 @@ class RobotBase:
         sim.world.initialize_physics()
         self._robot.initialize()
 
+    def set_multi_env(self, num_envs: int, env_spacing: float = 0.0) -> None:
+        """Stash multi-env knobs. The broadcast Articulation view itself
+        is constructed lazily in ensure_initialized() AFTER world.play()
+        has fired, so its constructor sees a live physics sim view and
+        eagerly inits _physics_view (avoids a separate initialize() race
+        with the timeline's STOP event)."""
+        self._num_envs = int(num_envs)
+        self._env_spacing = float(env_spacing)
+
+    def _ensure_articulation_view(self) -> None:
+        """Lazily build the broadcast Articulation on the first
+        ensure_initialized() call -- by then world.play() has run and
+        SimulationManager.get_physics_sim_view() is non-None, so the
+        constructor synchronously calls _on_physics_ready and the view
+        is immediately usable. Phase 1 (num_envs=1) skips this entirely
+        and writes go through self._robot._articulation_view."""
+        if self._av is not None or self._num_envs <= 1:
+            return
+        from isaacsim.core.prims import Articulation
+
+        kin = self.robot_cfg["kinematics"]
+        root = kin["usd_robot_root"].strip("/")
+        self._av = Articulation(
+            prim_paths_expr=f"/World/env_*/{root}",
+            name=f"{root}_view",
+            reset_xform_properties=False,
+        )
+        print(f"[robot] ArticulationView /World/env_*/{root} -> "
+              f"{self._num_envs} envs")
+
+    # ---- broadcast helpers ---------------------------------------------
+    # Every write site goes through these so single-env (no _av) and
+    # multi-env (av broadcast) share one call shape: pass a (K,) vector
+    # of values for K joints; we tile to (N, K) when _av exists.
+
+    def broadcast_view(self):
+        """Return the broadcast Articulation if multi-env is active and
+        the view is healthy; otherwise None. SwerveBaseController calls
+        this each tick so it can refresh _physics_view if a prim-deletion
+        event tore it down between ticks."""
+        if self._broadcast_initialized():
+            return self._av
+        return None
+
+    def _broadcast_initialized(self) -> bool:
+        """Construct + use the broadcast view if multi-env is active and
+        the physics sim view is live. Returns True only when the view
+        is actually ready to receive writes; otherwise callers fall
+        back to env_0 single-articulation writes.
+
+        Isaac Sim 5.1's Articulation deletes self._physics_view inside
+        _on_prim_deletion (any prim deletion event teardown) -- which
+        can fire during cloner cleanup / physics restart, even after
+        a successful construction. We therefore re-check existence each
+        call and re-attach _physics_view via _on_physics_ready when it
+        goes missing (initialize() would crash on the missing-attr path
+        in is_physics_handle_valid)."""
+        self._ensure_articulation_view()
+        if self._av is None:
+            return False
+        if (hasattr(self._av, "_physics_view")
+                and self._av._physics_view is not None):
+            return True
+        # _physics_view missing or torn down: re-attach by manually
+        # running the ready callback against the current sim view.
+        try:
+            self._av._on_physics_ready(None)
+        except Exception as exc:  # noqa: BLE001
+            print(f"[robot] av._on_physics_ready failed: {exc}")
+            return False
+        return (hasattr(self._av, "_physics_view")
+                and self._av._physics_view is not None)
+
+    def write_joint_positions(self, positions, joint_indices) -> None:
+        idx = np.asarray(joint_indices, dtype=np.int32)
+        pos = np.asarray(positions, dtype=np.float32)
+        if self._broadcast_initialized():
+            tiled = np.tile(pos, (self._num_envs, 1))
+            self._av.set_joint_positions(tiled, joint_indices=idx)
+        else:
+            self._robot.set_joint_positions(positions, joint_indices)
+
+    def write_joint_position_targets(self, positions, joint_indices) -> None:
+        idx = np.asarray(joint_indices, dtype=np.int32)
+        pos = np.asarray(positions, dtype=np.float32)
+        if self._broadcast_initialized():
+            tiled = np.tile(pos, (self._num_envs, 1))
+            self._av.set_joint_position_targets(tiled, joint_indices=idx)
+        else:
+            self._robot._articulation_view.set_joint_position_targets(
+                pos.reshape(1, -1), joint_indices=idx)
+
+    def write_joint_velocity_targets(self, velocities, joint_indices) -> None:
+        idx = np.asarray(joint_indices, dtype=np.int32)
+        vel = np.asarray(velocities, dtype=np.float32)
+        if self._broadcast_initialized():
+            tiled = np.tile(vel, (self._num_envs, 1))
+            self._av.set_joint_velocity_targets(tiled, joint_indices=idx)
+        else:
+            self._robot._articulation_view.set_joint_velocity_targets(
+                vel.reshape(1, -1), joint_indices=idx)
+
+    def write_joint_velocities(self, velocities, joint_indices) -> None:
+        idx = np.asarray(joint_indices, dtype=np.int32)
+        vel = np.asarray(velocities, dtype=np.float32)
+        if self._broadcast_initialized():
+            tiled = np.tile(vel, (self._num_envs, 1))
+            self._av.set_joint_velocities(tiled, joint_indices=idx)
+        else:
+            self._robot.set_joint_velocities(velocities, joint_indices)
+
+    def write_max_efforts(self, efforts, joint_indices) -> None:
+        idx = np.asarray(joint_indices, dtype=np.int32)
+        eff = np.asarray(efforts, dtype=np.float32)
+        if self._broadcast_initialized():
+            tiled = np.tile(eff, (self._num_envs, 1))
+            self._av.set_max_efforts(tiled, joint_indices=idx)
+        else:
+            self._robot._articulation_view.set_max_efforts(
+                values=eff, joint_indices=idx)
+
+    def write_gains(self, kps, kds, joint_indices) -> None:
+        idx = np.asarray(joint_indices, dtype=np.int32)
+        kp = np.asarray(kps, dtype=np.float32).reshape(-1)
+        kd = np.asarray(kds, dtype=np.float32).reshape(-1)
+        if self._broadcast_initialized():
+            kp_t = np.tile(kp, (self._num_envs, 1))
+            kd_t = np.tile(kd, (self._num_envs, 1))
+            self._av.set_gains(kps=kp_t, kds=kd_t, joint_indices=idx)
+        else:
+            self._robot._articulation_view.set_gains(
+                kps=kp.reshape(1, -1), kds=kd.reshape(1, -1),
+                joint_indices=idx)
+
     # ---- per-step init ------------------------------------------------
     @property
     def base_ready(self) -> bool:
@@ -307,10 +447,9 @@ class RobotBase:
         2nd run" bug). Snap-open removes that race window."""
         if self._robot is None or self._grip_idxs is None:
             return
-        idx = np.asarray(self._grip_idxs, dtype=np.int32)
         n = len(self._grip_idxs)
         q_open = np.full(n, self.GRIP_OPEN_Q, dtype=np.float32)
-        self._robot.set_joint_positions(q_open, list(self._grip_idxs))
+        self.write_joint_positions(q_open, list(self._grip_idxs))
         # Re-establish position mode and target so PD holds it open.
         self._grip_state = "open"
         self._grip_close = False
@@ -340,22 +479,24 @@ class RobotBase:
 
     def _sync_grip_mode(self, mode: str) -> None:
         n = len(self._grip_idxs)
-        idx = np.asarray(self._grip_idxs, dtype=np.int32)
         if mode != self._grip_mode:
             kp = 0.0 if mode == "velocity" else self.GRIP_KP
-            self._view.set_gains(
-                kps=np.full((1, n), kp, dtype=np.float32),
-                kds=np.full((1, n), self.GRIP_KD, dtype=np.float32),
-                joint_indices=idx)
+            self.write_gains(
+                kps=np.full(n, kp, dtype=np.float32),
+                kds=np.full(n, self.GRIP_KD, dtype=np.float32),
+                joint_indices=self._grip_idxs)
+            # switch_dof_control_mode takes a single dof index but defaults
+            # to applying across all env_indices, so the view broadcasts
+            # the mode change to every cloned articulation automatically.
+            view = self._av if self._av is not None else self._view
             for j in self._grip_idxs:
-                self._view.switch_dof_control_mode(mode, j)
+                view.switch_dof_control_mode(mode, j)
             self._grip_mode = mode
 
     def _apply_gripper(self) -> None:
         if self._grip_idxs is None:
             return
         n = len(self._grip_idxs)
-        idx = np.asarray(self._grip_idxs, dtype=np.int32)
         state = getattr(self, "_grip_state", "open")
         if state == "close":
             # Effort cap scales with aperture (genie_sim: max_force +
@@ -366,29 +507,29 @@ class RobotBase:
                 cur = max(float(abs(sjs.positions[j]))
                           for j in self._grip_idxs)
             try:
-                self._view.set_max_efforts(
-                    values=np.full(n, self.GRIP_MAX_FORCE + 2.0 * cur,
-                                   dtype=np.float32),
-                    joint_indices=idx)
+                self.write_max_efforts(
+                    np.full(n, self.GRIP_MAX_FORCE + 2.0 * cur,
+                            dtype=np.float32),
+                    self._grip_idxs)
             except Exception:  # noqa: BLE001
                 pass
-            self._view.set_joint_velocity_targets(
-                np.full((1, n), self.GRIP_CLOSE_VEL, dtype=np.float32),
-                joint_indices=idx)
+            self.write_joint_velocity_targets(
+                np.full(n, self.GRIP_CLOSE_VEL, dtype=np.float32),
+                self._grip_idxs)
         elif state == "hold":
             try:
-                self._view.set_max_efforts(
-                    values=np.full(n, self.GRIP_HOLD_FORCE, dtype=np.float32),
-                    joint_indices=idx)
+                self.write_max_efforts(
+                    np.full(n, self.GRIP_HOLD_FORCE, dtype=np.float32),
+                    self._grip_idxs)
             except Exception:  # noqa: BLE001
                 pass
-            self._view.set_joint_position_targets(
-                self._grip_hold_pos.reshape(1, n).astype(np.float32),
-                joint_indices=idx)
+            self.write_joint_position_targets(
+                self._grip_hold_pos.astype(np.float32),
+                self._grip_idxs)
         else:  # open
-            self._view.set_joint_position_targets(
-                np.full((1, n), self.GRIP_OPEN_Q, dtype=np.float32),
-                joint_indices=idx)
+            self.write_joint_position_targets(
+                np.full(n, self.GRIP_OPEN_Q, dtype=np.float32),
+                self._grip_idxs)
 
     def gripper_joint_state(self):
         sjs = self._robot.get_joints_state()

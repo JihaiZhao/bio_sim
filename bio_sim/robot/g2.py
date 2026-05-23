@@ -102,41 +102,41 @@ class G2Robot(RobotBase):
         if self._art_ctrl is None:
             self._art_ctrl = self._robot.get_articulation_controller()
         self._robot._articulation_view.initialize()
+        # Initialize the broadcast view too (lazy no-op if already up or
+        # not built for N=1). write_* helpers tile from this point on.
+        self._broadcast_initialized()
         self._arm_idx = [self._robot.get_dof_index(x) for x in self.j_names]
-        self._robot.set_joint_positions(self.retract_config, self._arm_idx)
-        # Also PIN the PD drive targets to retract_config. set_joint_positions
-        # above only writes sim STATE; the drive target stays at the USD
-        # default (~0). That's invisible while the per-step kinematic
-        # re-assert in base_hold keeps both arms latched -- but the
-        # re-assert is GATED on `_cmd_plan is None`, so the instant the
-        # active arm streams a plan the IDLE arm is left to PD alone and
-        # drifts toward 0 (shoulder roll = 0 = arm sticks out horizontally).
-        # Setting the target now anchors the idle arm at init pose during
-        # the active-arm trajectory.
-        from isaacsim.core.utils.types import ArticulationAction
-        self._art_ctrl.apply_action(ArticulationAction(
+        self.write_joint_positions(self.retract_config, self._arm_idx)
+        # Also PIN the PD drive targets to retract_config -- otherwise the
+        # idle arm drifts toward 0 (shoulder roll = horizontal stick) the
+        # instant the active arm starts streaming a plan and the
+        # _cmd_plan-gated kinematic re-assert stops covering it.
+        self.write_joint_position_targets(
             np.asarray(self.retract_config, dtype=np.float32),
-            joint_indices=np.asarray(self._arm_idx, dtype=np.int32),
-        ))
+            self._arm_idx,
+        )
         # hold retract kinematically until the first reach
         self._arm_hold_pos = np.asarray(self.retract_config, dtype=np.float32)
         self._arm_hold_idx = list(self._arm_idx)
-        self._robot._articulation_view.set_max_efforts(
-            values=np.array([5000 for _ in self._arm_idx]),
-            joint_indices=self._arm_idx,
+        self.write_max_efforts(
+            np.array([5000 for _ in self._arm_idx], dtype=np.float32),
+            self._arm_idx,
         )
         # Arm is PD-driven (apply_action) so a friction-held object
-        # follows the hand smoothly (a hard-teleported hand would fling
-        # it). The USD arm drive is soft (stiffness 1e4) -> stiffen it
-        # so PD tracking is tight enough for the fingers to close on
-        # the cube.
+        # follows the hand smoothly. Stiffen the USD arm drive so PD
+        # tracks tight enough for fingers to close on the cube.
         n = len(self._arm_idx)
-        self._robot._articulation_view.set_gains(
-            kps=np.full((1, n), self.ARM_KP, dtype=np.float32),
-            kds=np.full((1, n), self.ARM_KD, dtype=np.float32),
-            joint_indices=np.asarray(self._arm_idx, dtype=np.int32),
+        self.write_gains(
+            kps=np.full(n, self.ARM_KP, dtype=np.float32),
+            kds=np.full(n, self.ARM_KD, dtype=np.float32),
+            joint_indices=self._arm_idx,
         )
-        swerve = SwerveBaseController(self._robot, self._robot._articulation_view)
+        swerve = SwerveBaseController(
+            self._robot, self._robot._articulation_view,
+            av=self._av, num_envs=self._num_envs,
+            env_spacing=getattr(self, "_env_spacing", 0.0),
+            robot_facade=self,
+        )
         swerve.configure_drive_modes()
         self.base = NavController(swerve)
         if not self._base_start_applied:
@@ -181,12 +181,12 @@ class G2Robot(RobotBase):
             np.full(len(outer_idx), self.GRIP_OPEN_Q, dtype=np.float32),
             np.full(len(passive_idx), -self.GRIP_OPEN_Q, dtype=np.float32),
         ])
-        self._robot.set_joint_positions(positions, all_idx)
+        self.write_joint_positions(positions, all_idx)
         # Zero residual velocities -- otherwise PhysX integrates the
         # carry-over velocity (from the prior close) for a few ticks before
         # PD damps it out, and that shifts the effective close window.
         try:
-            self._robot.set_joint_velocities(
+            self.write_joint_velocities(
                 np.zeros(len(all_idx), dtype=np.float32), all_idx)
         except Exception as exc:  # noqa: BLE001
             print(f"[reset_gripper] zero-velocity skipped: {exc}")
@@ -209,7 +209,7 @@ class G2Robot(RobotBase):
         if self._robot is None or self._arm_idx is None:
             return
         rc = np.asarray(self.retract_config, dtype=np.float32)
-        self._robot.set_joint_positions(rc, self._arm_idx)
+        self.write_joint_positions(rc, self._arm_idx)
         self._cmd_plan = None
         self._cmd_idx = 0
         self._arm_kinematic = True
@@ -266,7 +266,7 @@ class G2Robot(RobotBase):
         # r1pro.py:base_hold for the explanation).
         if (self._arm_kinematic and self._cmd_plan is None
                 and self._arm_hold_pos is not None):
-            self._robot.set_joint_positions(
+            self.write_joint_positions(
                 self._arm_hold_pos, self._arm_hold_idx
             )
 
@@ -325,14 +325,15 @@ class G2Robot(RobotBase):
         st = self._cmd_plan[self._cmd_idx]
         pos = st.position.cpu().numpy()
         if self._arm_kinematic:
-            self._robot.set_joint_positions(pos, self._cmd_idx_list)
+            # Broadcast: (K,) waypoint tiles to (N, K) across all envs.
+            self.write_joint_positions(pos, self._cmd_idx_list)
             self._arm_hold_pos = pos          # keep holding the final config
             self._arm_hold_idx = list(self._cmd_idx_list)
         else:
-            self._art_ctrl.apply_action(ArticulationAction(
-                pos, st.velocity.cpu().numpy(),
-                joint_indices=self._cmd_idx_list,
-            ))
+            # PD mode: position + velocity targets via the broadcast view.
+            vel = st.velocity.cpu().numpy()
+            self.write_joint_position_targets(pos, self._cmd_idx_list)
+            self.write_joint_velocity_targets(vel, self._cmd_idx_list)
         self._cmd_idx += 1
         for _ in range(2):
             sim.step(render=False)
