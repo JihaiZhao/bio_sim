@@ -1,0 +1,39 @@
+# G2 overlay for the demo task. Merged ON TOP of robots/g2.yaml so the
+# pick_place defaults stay intact -- only the keys that differ for the
+# demo (base parked AT the work pose, plate on table top instead of free
+# floor) are listed here.
+#
+# DemoScene reads:
+#   cube_xyz             plate spawn xy (z is derived from the table+plate
+#                        stack height by DemoScene; the z value here is
+#                        ignored on purpose)
+#   grasp_quat           gripper orientation at grasp & place (top-down)
+#   cube_quat            plate spawn orientation
+#   robot_face_yaw_deg   yaw the chassis ends up at
+#   robot_start          [x, y, yaw_rad] -- the FIXED work pose; no driving
+
+# Plate xy on the front-right of the (90 deg-Z-rotated) demo table.
+# DemoScene derives table centre as (cube_x + PLATE_X_RIGHT,
+# cube_y - PLATE_Y_FORWARD), so the table CENTRE aligns with the
+# robot's body-X axis (= robot_start.x = -0.5) and the plate ends up
+# 20 cm to the robot's RIGHT (world -X side when facing -Y, since
+# robot's right is world -X).
+#
+# Tuning notes:
+#  * cube_x = -0.7 -> table_cx = -0.5 (= robot.x). Plate sits at -0.7,
+#    20 cm world-X right of robot centre = robot's right.
+#  * cube_y = -0.55 -> table_cy = -0.75. Table +Y edge at -0.30.
+#    Robot torso reaches ~ -0.25 forward of base centre = -0.40 in
+#    world Y (estimate). Gap ~10 cm to table edge.
+# z is derived from the table+plate stack; left 0 here.
+cube_xyz: [-0.7, -0.65, 0.0]
+grasp_quat: [0.0, 1.0, 0.0, 0.0]
+cube_quat: [0.7071, 0.0, 0.0, 0.7071]
+robot_face_yaw_deg: -90.0
+
+# Base spawn = work pose. x is the table centre x (= plate.x); y is just
+# behind the table's +Y edge with ~5 cm clearance (plate.y + 0.55 leaves
+# enough room for the robot's 0.3 m base radius vs the 0.45 m table-half).
+robot_start: [-0.5, 0.15, -1.5708]
+
+# Init arm/body/head poses unchanged from robots/g2.yaml -- inherit via the merge.

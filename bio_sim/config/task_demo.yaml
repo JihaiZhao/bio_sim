@@ -1,0 +1,86 @@
+# Demo task: 1 OT-One on 1 Thorlabs table; plate goes from table top into
+# the OT-One deck. Base does NOT move -- robot_start (per-robot overlay)
+# IS the work pose. Shared knobs only; per-robot overlay supplies the
+# grasp/place poses (workspace differs by robot).
+
+object: object_a
+
+# Pre/post offsets for the approach + lift + retreat (m, all in +z world).
+pre_grasp_dz: 0.1
+lift_dz: 0.1
+retreat_dz: 0.15
+# Tiny gap above the deck on release so the plate's own collider settles
+# onto the deck without an interpenetration impulse.
+place_clearance_dz: 0.005
+
+# Sink EE this far BELOW the plate's top face when closing fingers (m,
+# negative = down). The 96-well plate is 1.46 cm thick and the omnipicker
+# fingertip closing arc sits at ~gripper_center height -- with EE at the
+# plate TOP the fingers close above the plate (visible as "fingers shut
+# to 0, plate stays on table, eff(outer)=0"). -0.008 puts EE in the plate
+# body so the fingertip arc engages the side wall mid-height. Tune by
+# +/- 1-2 mm if the symptom shifts (fingers stop on the rim = too high;
+# gripper body collides with table = too low).
+grasp_dz: -0.008
+
+# Place target = OT-One DECK CENTRE + this xy offset (metres). [0, 0] drops
+# the plate dead centre on the deck. Forward-of-centre (toward the robot
+# when robot faces -Y) is -y, e.g. [0.0, -0.05].
+place_offset_xy: [0.0, 0.2]
+
+# R-key randomization: each press resamples plate xy uniformly in
+# [-hx, +hx] x [-hy, +hy] around the initial cube_xyz from the per-robot
+# overlay. Set both to 0 to disable. Pick follows the live plate pose;
+# place stays fixed (OT-One deck centre + place_offset_xy). Keep the range
+# inside the table footprint and clear of the OT-One body.
+plate_random_dxy: [0.25, 0.05]
+
+# Visual multi-env backdrop. num_envs=1 = the demo as a single scene; >1
+# spawns extra (table+OT-One+plate) STATIC copies along +X for cinematic
+# scale. Mirrors are NOT animated -- this is just visual decoration. A
+# true N-robot synced demo needs the Isaac-Lab-style Cloner restructuring
+# that is NOT part of this task (filed under bio_sim future work).
+num_envs: 4
+env_spacing: 1.5
+
+# Declarative scene recipe: the 96-well plate, same asset bio uses.
+scene:
+  objects:
+    - name: object_a
+      asset: objects/well_plate_96
+
+# Grasp mechanism: physics | assist.
+#   physics = friction-only. Realistic but the kinematic base teleport
+#             can fly the plate off mid-carry (see gripper.py header).
+#   assist  = friction close + UsdPhysics.FixedJoint weld at the live
+#             contact pose -> the plate rigidly follows the gripper.
+# Demo defaults to assist for the "100% success" videos the demo exists
+# to capture. Flip to physics if you specifically want to show the
+# realistic-friction failure mode.
+grasp_mode: assist
+
+# Cinematic lighting. Preset names: studio | warm | night | custom.
+#   studio -> clean white photo-studio (matches reference image 1)
+#   warm   -> golden-hour interior     (matches reference image 2)
+#   night  -> dim low-key evening      (matches reference image 3)
+# Render mode is the RTX engine to start with:
+#   RealTime    -- fast viewport (60+ FPS), use during demo runs / debugging
+#   PathTracing -- physically-correct GI, ~30 FPS on a 5090, use for recording
+# Press  P  in the viewport to toggle modes at runtime without restarting.
+# To override preset values, add dome:/sun:/fill: sub-blocks here -- when
+# preset != custom the per-key overrides merge over the preset; when
+# preset == custom they fully replace.
+lighting:
+  preset: studio
+  # Disable the HDRI panorama -- otherwise the studio HDRI you'd see through
+  # any gap in the walls reads as "another room outside our room". Setting
+  # hdri to "" keeps the dome's colour temperature + intensity (so GI / soft
+  # reflections still work), but the background becomes a uniform tint
+  # instead of the photo-studio panorama. To restore the HDRI, just delete
+  # this dome: override (or set hdri to the absolute .hdr path you want).
+  dome:
+    hdri: ""
+  render:
+    mode: RealTime
+    spp: 4
+

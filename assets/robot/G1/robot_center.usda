@@ -1,0 +1,2746 @@
+#usda 1.0
+(
+    customLayerData = {
+        dictionary cameraSettings = {
+            dictionary Front = {
+                double3 position = (3.5237383324178273, 0.9889319898622643, 0.8863637022827122)
+                double radius = 0.20162155628204345
+            }
+            dictionary Perspective = {
+                double3 position = (3.681983178224388, 0.23253621539467564, 2.00997370704511)
+                double3 target = (0.6855262382582143, -0.43294413738617876, 0.6916300754552971)
+            }
+            dictionary Right = {
+                double3 position = (0.12188026367491354, -5.336338033704147, 0.9161719822432957)
+                double radius = 0.2922870397567749
+            }
+            dictionary Top = {
+                double3 position = (0.21615198765878504, 0.32903019105620646, 5)
+                double radius = 3.077169990539551
+            }
+            string boundCamera = "/OmniverseKit_Persp"
+        }
+        dictionary metricsAssembler = {
+            dictionary "/G1/cam_l" = {
+            }
+            dictionary "/G1/cam_r" = {
+            }
+            int version = 1
+        }
+        dictionary omni_layer = {
+            string authoring_layer = "./robot.usda"
+            dictionary locked = {
+            }
+            dictionary muteness = {
+            }
+        }
+        dictionary renderSettings = {
+        }
+    }
+    defaultPrim = "G1"
+    metersPerUnit = 1
+    upAxis = "Z"
+)
+
+def Xform "G1" (
+    prepend apiSchemas = ["PhysicsArticulationRootAPI", "PhysxArticulationAPI"]
+    displayName = "G1"
+    variants = {
+        string Physics = "PhysX"
+        string Sensor = "Sensors"
+    }
+    prepend variantSets = ["Physics", "Sensor"]
+)
+{
+    bool physxArticulation:enabledSelfCollisions = 0
+    quatd xformOp:orient = (1, 0, 0, 0)
+    double3 xformOp:scale = (1, 1, 1)
+    double3 xformOp:translate = (0, 0, 0)
+    uniform token[] xformOpOrder = ["xformOp:translate", "xformOp:orient", "xformOp:scale"]
+
+    over "base_link" (
+        delete apiSchemas = ["PhysicsArticulationRootAPI", "PhysxArticulationAPI"]
+        prepend apiSchemas = ["PhysxRigidBodyAPI"]
+    )
+    {
+        bool physxRigidBody:disableGravity = 1
+
+        over "visuals"
+        {
+            quatf xformOp:orient = (1, 0, 0, 0)
+            float3 xformOp:scale = (1, 1, 1)
+            double3 xformOp:translate = (0, 0, 0.21113469724309647)
+            uniform token[] xformOpOrder = ["xformOp:translate", "xformOp:orient", "xformOp:scale"]
+        }
+
+        def Camera "Fisheye_Back_01" (
+            active = true
+        )
+        {
+            token cameraProjectionType = "fisheyePolynomial" (
+                allowedTokens = ["pinhole", "fisheyePolynomial", "fisheyeSpherical", "fisheyeKannalaBrandtK3", "fisheyeRadTanThinPrism", "omniDirectionalStereo"]
+            )
+            float2 clippingRange = (0.01, 10000000)
+            float focalLength = 18.147562
+            float focusDistance = 400
+            bool omni:kit:cameraLock = 1
+            custom uniform vector3d omni:kit:centerOfInterest = (0, 0, -400)
+            token visibility = "invisible"
+            quatd xformOp:orient = (0.49999999999999933, 0.5000000000000001, 0.5000000000000004, 0.5000000000000001)
+            double3 xformOp:scale = (1, 1, 1)
+            double3 xformOp:translate = (-0.30000000447034847, 0.057673270003865684, 1.0630543750437111)
+            uniform token[] xformOpOrder = ["xformOp:translate", "xformOp:orient", "xformOp:scale"]
+        }
+
+        def Camera "Fisheye_Back_02" (
+            active = true
+        )
+        {
+            token cameraProjectionType = "fisheyePolynomial" (
+                allowedTokens = ["pinhole", "fisheyePolynomial", "fisheyeSpherical", "fisheyeKannalaBrandtK3", "fisheyeRadTanThinPrism", "omniDirectionalStereo"]
+            )
+            float2 clippingRange = (0.01, 10000000)
+            float focalLength = 18.147562
+            float focusDistance = 400
+            bool omni:kit:cameraLock = 1
+            custom uniform vector3d omni:kit:centerOfInterest = (0, 0, -400)
+            token visibility = "invisible"
+            quatd xformOp:orient = (0.49999999999999933, 0.5000000000000001, 0.5000000000000004, 0.5000000000000001)
+            double3 xformOp:scale = (1, 1, 1)
+            double3 xformOp:translate = (-0.30000000447034836, -0.05767, 1.063054375043722)
+            uniform token[] xformOpOrder = ["xformOp:translate", "xformOp:orient", "xformOp:scale"]
+        }
+
+        def PhysicsFixedJoint "FixedJoint"
+        {
+            rel physics:body1 = </G1/base_link>
+            float physics:breakForce = inf
+            float physics:breakTorque = inf
+            point3f physics:localPos0 = (0, 0, 0)
+            point3f physics:localPos1 = (0, 0, 0)
+            quatf physics:localRot0 = (1, 0, 0, 0)
+            quatf physics:localRot1 = (1, 0, 0, 0)
+        }
+    }
+
+    over "body_link1" (
+        prepend apiSchemas = ["PhysxRigidBodyAPI"]
+    )
+    {
+        bool physxRigidBody:disableGravity = 1
+
+        over "visuals"
+        {
+            quatf xformOp:orient = (1, 0, 0, 0)
+            float3 xformOp:scale = (1, 1, 1)
+            double3 xformOp:translate = (0, 0, 0)
+            uniform token[] xformOpOrder = ["xformOp:translate", "xformOp:orient", "xformOp:scale"]
+        }
+    }
+
+    over "body_link2" (
+        prepend apiSchemas = ["PhysxRigidBodyAPI"]
+    )
+    {
+        bool physxRigidBody:disableGravity = 1
+    }
+
+    over "arm_base_link" (
+        prepend apiSchemas = ["PhysxRigidBodyAPI"]
+    )
+    {
+        bool physxRigidBody:disableGravity = 1
+    }
+
+    over "arm_l_base_link" (
+        prepend apiSchemas = ["PhysxRigidBodyAPI"]
+    )
+    {
+        bool physxRigidBody:disableGravity = 1
+    }
+
+    over "arm_l_link1" (
+        prepend apiSchemas = ["PhysxRigidBodyAPI"]
+    )
+    {
+        bool physxRigidBody:disableGravity = 1
+
+        over "collisions"
+        {
+            bool physics:collisionEnabled = 0
+        }
+    }
+
+    over "arm_l_link2" (
+        prepend apiSchemas = ["PhysxRigidBodyAPI"]
+    )
+    {
+        bool physxRigidBody:disableGravity = 1
+
+        over "collisions"
+        {
+            bool physics:collisionEnabled = 0
+        }
+    }
+
+    over "arm_l_link3" (
+        prepend apiSchemas = ["PhysxRigidBodyAPI"]
+    )
+    {
+        bool physxRigidBody:disableGravity = 1
+
+        over "collisions"
+        {
+            bool physics:collisionEnabled = 0
+        }
+    }
+
+    over "arm_l_link4" (
+        prepend apiSchemas = ["PhysxRigidBodyAPI"]
+    )
+    {
+        bool physxRigidBody:disableGravity = 1
+
+        over "collisions"
+        {
+            bool physics:collisionEnabled = 0
+        }
+    }
+
+    over "arm_l_link5" (
+        prepend apiSchemas = ["PhysxRigidBodyAPI"]
+    )
+    {
+        bool physxRigidBody:disableGravity = 1
+
+        over "collisions"
+        {
+            bool physics:collisionEnabled = 0
+        }
+    }
+
+    over "arm_l_link6" (
+        prepend apiSchemas = ["PhysxRigidBodyAPI"]
+    )
+    {
+        bool physxRigidBody:disableGravity = 1
+
+        over "collisions"
+        {
+            bool physics:collisionEnabled = 0
+        }
+    }
+
+    over "arm_l_end_link" (
+        prepend apiSchemas = ["PhysxRigidBodyAPI"]
+    )
+    {
+        bool physxRigidBody:disableGravity = 1
+        token visibility = "inherited"
+
+        over "collisions"
+        {
+            bool physics:collisionEnabled = 0
+        }
+
+        def "Cam" (
+            prepend payload = @./configuration/cam_l.usd@
+        )
+        {
+            quatf xformOp:orient = (0.70710677, -0.70710677, 0, 0)
+            double xformOp:rotateX:unitsResolve = 90
+            float3 xformOp:scale = (1, 1, 1)
+            double3 xformOp:translate = (1.1692205537094935e-10, 0.001337512157892018, 9.477814089109415e-10)
+            uniform token[] xformOpOrder = ["xformOp:translate", "xformOp:orient", "xformOp:scale", "xformOp:rotateX:unitsResolve"]
+
+            over "Cam"
+            {
+                over "cam"
+                {
+                    quatf xformOp:orient = (1, 0, 0, 0)
+                    float3 xformOp:scale = (1, 1, 1.02)
+                    double3 xformOp:translate = (3.430589146091734e-14, 4.5075054799781356e-14, 0.00022551183775573747)
+                    uniform token[] xformOpOrder = ["xformOp:translate", "xformOp:orient", "xformOp:scale"]
+                }
+            }
+
+            over "Looks" (
+                active = false
+            )
+            {
+            }
+
+            over "cam_l"
+            {
+                over "Cam_L_01" (
+                    prepend apiSchemas = ["MaterialBindingAPI"]
+                )
+                {
+                    rel material:binding = </G1/Looks/ml_Silver> (
+                        bindMaterialAs = "weakerThanDescendants"
+                    )
+                }
+
+                over "Cam_L_02" (
+                    prepend apiSchemas = ["MaterialBindingAPI"]
+                )
+                {
+                    rel material:binding = </G1/Looks/Black_04> (
+                        bindMaterialAs = "weakerThanDescendants"
+                    )
+                    token visibility = "inherited"
+                }
+            }
+        }
+    }
+
+    over "arm_r_base_link" (
+        prepend apiSchemas = ["PhysxRigidBodyAPI"]
+    )
+    {
+        bool physxRigidBody:disableGravity = 1
+    }
+
+    over "arm_r_link1" (
+        prepend apiSchemas = ["PhysxRigidBodyAPI"]
+    )
+    {
+        bool physxRigidBody:disableGravity = 1
+
+        over "collisions"
+        {
+            bool physics:collisionEnabled = 0
+        }
+    }
+
+    over "arm_r_link2" (
+        prepend apiSchemas = ["PhysxRigidBodyAPI"]
+    )
+    {
+        bool physxRigidBody:disableGravity = 1
+
+        over "collisions"
+        {
+            bool physics:collisionEnabled = 0
+        }
+    }
+
+    over "arm_r_link3" (
+        prepend apiSchemas = ["PhysxRigidBodyAPI"]
+    )
+    {
+        bool physxRigidBody:disableGravity = 1
+
+        over "collisions"
+        {
+            bool physics:collisionEnabled = 0
+        }
+    }
+
+    over "arm_r_link4" (
+        prepend apiSchemas = ["PhysxRigidBodyAPI"]
+    )
+    {
+        bool physxRigidBody:disableGravity = 1
+
+        over "collisions"
+        {
+            bool physics:collisionEnabled = 0
+        }
+    }
+
+    over "arm_r_link5" (
+        prepend apiSchemas = ["PhysxRigidBodyAPI"]
+    )
+    {
+        bool physxRigidBody:disableGravity = 1
+
+        over "collisions"
+        {
+            bool physics:collisionEnabled = 0
+        }
+    }
+
+    over "arm_r_link6" (
+        prepend apiSchemas = ["PhysxRigidBodyAPI"]
+    )
+    {
+        bool physxRigidBody:disableGravity = 1
+
+        over "collisions"
+        {
+            bool physics:collisionEnabled = 0
+        }
+    }
+
+    over "arm_r_end_link" (
+        prepend apiSchemas = ["PhysxRigidBodyAPI"]
+    )
+    {
+        bool physxRigidBody:disableGravity = 1
+
+        over "collisions"
+        {
+            bool physics:collisionEnabled = 0
+        }
+
+        def "Cam" (
+            prepend payload = @./configuration/cam_r.usd@
+        )
+        {
+            quatf xformOp:orient = (0.70710677, -0.70710677, 0, 0)
+            double xformOp:rotateX:unitsResolve = 90
+            float3 xformOp:scale = (1, 1, 1)
+            double3 xformOp:translate = (0, 0.00134, 0)
+            uniform token[] xformOpOrder = ["xformOp:translate", "xformOp:orient", "xformOp:scale", "xformOp:rotateX:unitsResolve"]
+
+            over "Cam"
+            {
+                over "cam"
+                {
+                    quatf xformOp:orient = (1, 0, 0, 0)
+                    float3 xformOp:scale = (1, 1, 1.02)
+                    double3 xformOp:translate = (3.430589146091734e-14, 4.5075054799781356e-14, 0.00022551183775573747)
+                    uniform token[] xformOpOrder = ["xformOp:translate", "xformOp:orient", "xformOp:scale"]
+                }
+            }
+
+            over "Looks" (
+                active = false
+            )
+            {
+            }
+
+            over "cam_r"
+            {
+                over "Cam_R_01" (
+                    prepend apiSchemas = ["MaterialBindingAPI"]
+                )
+                {
+                    rel material:binding = </G1/Looks/ml_Silver> (
+                        bindMaterialAs = "weakerThanDescendants"
+                    )
+                }
+
+                over "Cam_R_02" (
+                    prepend apiSchemas = ["MaterialBindingAPI"]
+                )
+                {
+                    rel material:binding = </G1/Looks/Black_04> (
+                        bindMaterialAs = "weakerThanDescendants"
+                    )
+                    token visibility = "inherited"
+                    quatf xformOp:orient = (1, 0, 0, 0)
+                    float3 xformOp:scale = (1, 1, 1)
+                    double3 xformOp:translate = (0, 0, 0)
+                    uniform token[] xformOpOrder = ["xformOp:translate", "xformOp:orient", "xformOp:scale"]
+                }
+            }
+        }
+    }
+
+    over "head_link1" (
+        prepend apiSchemas = ["PhysxRigidBodyAPI"]
+    )
+    {
+        bool physxRigidBody:disableGravity = 1
+    }
+
+    over "head_link2" (
+        prepend apiSchemas = ["PhysxRigidBodyAPI"]
+    )
+    {
+        bool physxRigidBody:disableGravity = 1
+
+        over "visuals"
+        {
+            quatf xformOp:orient = (1, 0, 0, 0)
+            float3 xformOp:scale = (1, 1, 1)
+            double3 xformOp:translate = (0.039525628306619376, -0.01962560545893477, 8.262606048342261e-10)
+            uniform token[] xformOpOrder = ["xformOp:translate", "xformOp:orient", "xformOp:scale"]
+        }
+
+        def Camera "Head_Camera" (
+            active = true
+        )
+        {
+            token cameraSensorType = "camera" (
+                allowedTokens = ["camera", "radar", "lidar", "rtxsensor"]
+            )
+            float2 clippingRange = (0.01, 10000000)
+            float focalLength = 1.93
+            float focusDistance = 400
+            float horizontalAperture = 3.896
+            bool omni:kit:cameraLock = 1
+            float verticalAperture = 2.453
+            token visibility = "invisible"
+            quatd xformOp:orient = (6.123233995736766e-17, 0.7071067811865476, -4.329780281177467e-17, -0.7071067811865476)
+            double3 xformOp:scale = (1, 1, 1)
+            double3 xformOp:translate = (0.0858, -0.04119, 0)
+            uniform token[] xformOpOrder = ["xformOp:translate", "xformOp:orient", "xformOp:scale"]
+        }
+
+        def Camera "Fisheye_Camera_01" (
+            active = true
+        )
+        {
+            token cameraProjectionType = "fisheyePolynomial" (
+                allowedTokens = ["pinhole", "fisheyePolynomial", "fisheyeSpherical", "fisheyeKannalaBrandtK3", "fisheyeRadTanThinPrism", "omniDirectionalStereo"]
+            )
+            float2 clippingRange = (0.01, 10000000)
+            float focalLength = 1.93
+            float focusDistance = 400
+            float fthetaPolyB = 0.00245
+            float fthetaPolyC = 0
+            float horizontalAperture = 3.896
+            bool omni:kit:cameraLock = 1
+            float verticalAperture = 2.453
+            token visibility = "invisible"
+            quatd xformOp:orient = (0.0751616554826484, 0.9377050893657665, 0.030613207309336917, -0.33782054771858294)
+            double3 xformOp:scale = (1, 1, 1)
+            double3 xformOp:translate = (0.07625208730182864, 0.01962537929559538, 0.047878739498311895)
+            uniform token[] xformOpOrder = ["xformOp:translate", "xformOp:orient", "xformOp:scale"]
+        }
+
+        def Camera "Fisheye_Camera_02" (
+            active = true
+        )
+        {
+            token cameraProjectionType = "fisheyePolynomial" (
+                allowedTokens = ["pinhole", "fisheyePolynomial", "fisheyeSpherical", "fisheyeKannalaBrandtK3", "fisheyeRadTanThinPrism", "omniDirectionalStereo"]
+            )
+            float2 clippingRange = (0.01, 10000000)
+            float focalLength = 1.93
+            float focusDistance = 400
+            float fthetaPolyB = 0.00245
+            float fthetaPolyC = 0
+            float horizontalAperture = 3.896
+            bool omni:kit:cameraLock = 1
+            float verticalAperture = 2.453
+            token visibility = "invisible"
+            quatd xformOp:orient = (-0.07386098599114474, -0.35900989056451804, -0.17965850209084597, 0.9128960925821417)
+            double3 xformOp:scale = (1, 1, 1)
+            double3 xformOp:translate = (0.07625090899974629, 0.019624617386816645, -0.05772210537580889)
+            uniform token[] xformOpOrder = ["xformOp:translate", "xformOp:orient", "xformOp:scale"]
+        }
+
+        def Camera "Top_Camera" (
+            kind = "model"
+        )
+        {
+            token cameraProjectionType = "fisheyePolynomial" (
+                allowedTokens = ["pinhole", "fisheyePolynomial", "fisheyeSpherical", "fisheyeKannalaBrandtK3", "fisheyeRadTanThinPrism", "omniDirectionalStereo"]
+            )
+            float2 clippingRange = (0.01, 10000000)
+            float focalLength = 1.93
+            float focusDistance = 400
+            float horizontalAperture = 3.896
+            bool omni:kit:cameraLock = 1
+            float verticalAperture = 2.453
+            token visibility = "invisible"
+            quatd xformOp:orient = (0.14097441837755495, 0.6929114036896132, 0.14097441837755503, -0.6929114036896132)
+            double3 xformOp:scale = (1, 1, 1)
+            double3 xformOp:translate = (0.09148739595212874, -0.07523617103289082, -0.0000051337173225556625)
+            uniform token[] xformOpOrder = ["xformOp:translate", "xformOp:orient", "xformOp:scale"]
+
+            over "OmniverseKitViewportCameraMesh" (
+                always_pick_model = true
+                hide_in_stage_window = true
+                kind = "subcomponent"
+                no_delete = true
+                prepend references = @../../../sim/isaacsim/kit/resources/models/camera/camera.usd@
+            )
+            {
+                bool primvars:doNotCastShadows = 1
+                bool primvars:omni:kit:isGizmo = 1
+                token visibility
+                float3 xformOp:scale = (0.01, 0.01, 0.01)
+                uniform token[] xformOpOrder = ["xformOp:scale"]
+
+                over "CameraModel" (
+                    always_pick_model = true
+                    hide_in_stage_window = true
+                    no_delete = true
+                )
+                {
+                    float3[] extent = [(3.4028235e38, 3.4028235e38, 3.4028235e38), (-3.4028235e38, -3.4028235e38, -3.4028235e38)]
+                    bool primvars:doNotCastShadows = 1
+                    bool primvars:omni:kit:isGizmo = 1
+                }
+            }
+        }
+    }
+
+    over "joints"
+    {
+        over "idx01_body_joint1"
+        {
+            float drive:linear:physics:damping = 1000
+            float drive:linear:physics:maxForce = inf
+            float drive:linear:physics:stiffness = 10000
+            float drive:linear:physics:targetPosition = 0
+            float physxJoint:maxJointVelocity = 0.1
+            float state:linear:physics:position = 0
+            float state:linear:physics:velocity = 0
+        }
+
+        over "idx02_body_joint2"
+        {
+            float drive:angular:physics:damping = 1000
+            float drive:angular:physics:maxForce = 100
+            float drive:angular:physics:stiffness = 10000
+            float drive:angular:physics:targetPosition = 0
+            float state:angular:physics:position = 0
+            float state:angular:physics:velocity = 0
+        }
+
+        over "idx11_head_joint1"
+        {
+            float drive:angular:physics:damping = 50
+            float drive:angular:physics:stiffness = 500
+            float drive:angular:physics:targetPosition = 0
+            float state:angular:physics:position = 0
+            float state:angular:physics:velocity = 0
+        }
+
+        over "idx12_head_joint2"
+        {
+            float drive:angular:physics:damping = 50
+            float drive:angular:physics:stiffness = 500
+            float drive:angular:physics:targetPosition = 0
+            float state:angular:physics:position = 0
+            float state:angular:physics:velocity = 0
+        }
+
+        over "idx21_arm_l_joint1"
+        {
+            float drive:angular:physics:damping = 500
+            float drive:angular:physics:stiffness = 10000
+            float physics:lowerLimit = -180
+            float physics:upperLimit = 180
+            float state:angular:physics:position = 0
+            float state:angular:physics:velocity = 0
+        }
+
+        over "idx61_arm_r_joint1"
+        {
+            float drive:angular:physics:damping = 500
+            float drive:angular:physics:stiffness = 10000
+            float physics:lowerLimit = -180
+            float physics:upperLimit = 180
+            float state:angular:physics:position = 0
+            float state:angular:physics:velocity = 0
+        }
+
+        over "idx22_arm_l_joint2"
+        {
+            float drive:angular:physics:damping = 500
+            float drive:angular:physics:stiffness = 10000
+            float drive:angular:physics:targetPosition = 0
+            float physics:lowerLimit = -180
+            float physics:upperLimit = 180
+            float state:angular:physics:position = 0
+            float state:angular:physics:velocity = 0
+        }
+
+        over "idx62_arm_r_joint2"
+        {
+            float drive:angular:physics:damping = 500
+            float drive:angular:physics:stiffness = 10000
+            float drive:angular:physics:targetPosition = 0
+            float physics:lowerLimit = -180
+            float physics:upperLimit = 180
+            float state:angular:physics:position = 0
+            float state:angular:physics:velocity = 0
+        }
+
+        over "idx23_arm_l_joint3"
+        {
+            float drive:angular:physics:damping = 500
+            float drive:angular:physics:stiffness = 10000
+            float physics:lowerLimit = -180
+            float physics:upperLimit = 180
+            float state:angular:physics:position = 0
+            float state:angular:physics:velocity = 0
+        }
+
+        over "idx63_arm_r_joint3"
+        {
+            float drive:angular:physics:damping = 500
+            float drive:angular:physics:stiffness = 10000
+            float physics:lowerLimit = -180
+            float physics:upperLimit = 180
+            float state:angular:physics:position = 0
+            float state:angular:physics:velocity = 0
+        }
+
+        over "idx24_arm_l_joint4"
+        {
+            float drive:angular:physics:damping = 500
+            float drive:angular:physics:stiffness = 10000
+            float physics:lowerLimit = -180
+            float physics:upperLimit = 180
+            float state:angular:physics:position = 0
+            float state:angular:physics:velocity = 0
+        }
+
+        over "idx64_arm_r_joint4"
+        {
+            float drive:angular:physics:damping = 500
+            float drive:angular:physics:stiffness = 10000
+            float physics:lowerLimit = -180
+            float physics:upperLimit = 180
+            float state:angular:physics:position = 0
+            float state:angular:physics:velocity = 0
+        }
+
+        over "idx25_arm_l_joint5"
+        {
+            float drive:angular:physics:damping = 500
+            float drive:angular:physics:stiffness = 10000
+            float physics:lowerLimit = -180
+            float physics:upperLimit = 180
+            float state:angular:physics:position = 0
+            float state:angular:physics:velocity = 0
+        }
+
+        over "idx65_arm_r_joint5"
+        {
+            float drive:angular:physics:damping = 500
+            float drive:angular:physics:stiffness = 10000
+            float physics:lowerLimit = -180
+            float physics:upperLimit = 180
+            float state:angular:physics:position = 0
+            float state:angular:physics:velocity = 0
+        }
+
+        over "idx26_arm_l_joint6"
+        {
+            float drive:angular:physics:damping = 500
+            float drive:angular:physics:stiffness = 10000
+            float physics:lowerLimit = -180
+            float physics:upperLimit = 180
+            float state:angular:physics:position = 0
+            float state:angular:physics:velocity = 0
+        }
+
+        over "idx66_arm_r_joint6"
+        {
+            float drive:angular:physics:damping = 500
+            float drive:angular:physics:stiffness = 10000
+            float physics:lowerLimit = -180
+            float physics:upperLimit = 180
+            float state:angular:physics:position = 0
+            float state:angular:physics:velocity = 0
+        }
+
+        over "idx27_arm_l_joint7"
+        {
+            float drive:angular:physics:damping = 500
+            float drive:angular:physics:stiffness = 10000
+            float physics:lowerLimit = -180
+            float physics:upperLimit = 180
+            float state:angular:physics:position = 0
+            float state:angular:physics:velocity = 0
+        }
+
+        over "idx67_arm_r_joint7"
+        {
+            float drive:angular:physics:damping = 500
+            float drive:angular:physics:stiffness = 10000
+            float physics:lowerLimit = -180
+            float physics:upperLimit = 180
+            float state:angular:physics:position = 0
+            float state:angular:physics:velocity = 0
+        }
+
+        over "hand_l_index_joint1"
+        {
+            float drive:angular:physics:damping = 1
+            float drive:angular:physics:stiffness = 10
+            float drive:angular:physics:targetPosition = 0
+            float physxJoint:maxJointVelocity = 1000000
+            float state:angular:physics:position = 0
+            float state:angular:physics:velocity = 0
+        }
+
+        over "hand_l_little_joint1" (
+            delete apiSchemas = ["PhysicsDriveAPI:angular"]
+            prepend apiSchemas = ["PhysxMimicJointAPI:rotX"]
+        )
+        {
+            float physxJoint:maxJointVelocity = 1000000
+            float physxMimicJoint:rotX:gearing = -1
+            rel physxMimicJoint:rotX:referenceJoint = </G1/joints/hand_l_index_joint1>
+            float state:angular:physics:position = 0
+            float state:angular:physics:velocity = 0
+        }
+
+        over "hand_l_middle_joint1" (
+            delete apiSchemas = ["PhysicsDriveAPI:angular"]
+            prepend apiSchemas = ["PhysxMimicJointAPI:rotX"]
+        )
+        {
+            float physxJoint:maxJointVelocity = 1000000
+            float physxMimicJoint:rotX:gearing = -1
+            rel physxMimicJoint:rotX:referenceJoint = </G1/joints/hand_l_index_joint1>
+            float state:angular:physics:position = 0
+            float state:angular:physics:velocity = 0
+        }
+
+        over "hand_l_ring_joint1" (
+            delete apiSchemas = ["PhysicsDriveAPI:angular"]
+            prepend apiSchemas = ["PhysxMimicJointAPI:rotX"]
+        )
+        {
+            float physxJoint:maxJointVelocity = 1000000
+            float physxMimicJoint:rotX:gearing = -1
+            rel physxMimicJoint:rotX:referenceJoint = </G1/joints/hand_l_index_joint1>
+            float state:angular:physics:position = 0
+            float state:angular:physics:velocity = 0
+        }
+
+        over "hand_l_thumb_joint0"
+        {
+            float drive:angular:physics:damping = 1
+            float drive:angular:physics:stiffness = 10
+            float drive:angular:physics:targetPosition = 0
+            float physxJoint:maxJointVelocity = 1000000
+            float state:angular:physics:position = 0
+            float state:angular:physics:velocity = 0
+        }
+
+        over "hand_r_index_joint1"
+        {
+            float drive:angular:physics:damping = 1
+            float drive:angular:physics:stiffness = 10
+            float drive:angular:physics:targetPosition = 47.9
+            float physxJoint:maxJointVelocity = 1000000
+            float state:angular:physics:position = 0
+            float state:angular:physics:velocity = 0
+        }
+
+        over "hand_r_little_joint1" (
+            active = true
+            delete apiSchemas = ["PhysicsDriveAPI:angular", "PhysxMimicJointAPI:rotX"]
+            prepend apiSchemas = ["PhysxMimicJointAPI:rotX"]
+        )
+        {
+            float physxJoint:maxJointVelocity = 1000000
+            float physxMimicJoint:rotX:gearing = -1
+            rel physxMimicJoint:rotX:referenceJoint = </G1/joints/hand_r_index_joint1>
+            float state:angular:physics:position = 0
+            float state:angular:physics:velocity = 0
+        }
+
+        over "hand_r_middle_joint1" (
+            active = true
+            delete apiSchemas = ["PhysicsDriveAPI:angular", "PhysxMimicJointAPI:rotX"]
+            prepend apiSchemas = ["PhysxMimicJointAPI:rotX"]
+        )
+        {
+            float physxJoint:maxJointVelocity = 1000000
+            float physxMimicJoint:rotX:gearing = -1
+            rel physxMimicJoint:rotX:referenceJoint = </G1/joints/hand_r_index_joint1>
+            float state:angular:physics:position = 0
+            float state:angular:physics:velocity = 0
+        }
+
+        over "hand_r_ring_joint1" (
+            active = true
+            delete apiSchemas = ["PhysicsDriveAPI:angular", "PhysxMimicJointAPI:rotX"]
+            prepend apiSchemas = ["PhysxMimicJointAPI:rotX"]
+        )
+        {
+            float physxJoint:maxJointVelocity = 1000000
+            float physxMimicJoint:rotX:gearing = -1
+            rel physxMimicJoint:rotX:referenceJoint = </G1/joints/hand_r_index_joint1>
+            float state:angular:physics:position = 0
+            float state:angular:physics:velocity = 0
+        }
+
+        over "hand_r_thumb_joint0" (
+            active = true
+        )
+        {
+            float drive:angular:physics:damping = 1
+            float drive:angular:physics:stiffness = 10
+            float drive:angular:physics:targetPosition = 84.1
+            float physxJoint:maxJointVelocity = 1000000
+            float state:angular:physics:position = 0
+            float state:angular:physics:velocity = 0
+        }
+
+        over "hand_l_index_joint2" (
+            delete apiSchemas = ["PhysicsDriveAPI:angular"]
+            prepend apiSchemas = ["PhysxMimicJointAPI:rotX"]
+        )
+        {
+            float physxJoint:maxJointVelocity = 1000000
+            float physxMimicJoint:rotX:gearing = -1
+            rel physxMimicJoint:rotX:referenceJoint = </G1/joints/hand_l_index_joint1>
+            float state:angular:physics:position = 0
+            float state:angular:physics:velocity = 0
+        }
+
+        over "hand_l_little_joint2" (
+            delete apiSchemas = ["PhysicsDriveAPI:angular"]
+            prepend apiSchemas = ["PhysxMimicJointAPI:rotX"]
+        )
+        {
+            float physxJoint:maxJointVelocity = 1000000
+            float physxMimicJoint:rotX:gearing = -1
+            rel physxMimicJoint:rotX:referenceJoint = </G1/joints/hand_l_index_joint1>
+            float state:angular:physics:position = 0
+            float state:angular:physics:velocity = 0
+        }
+
+        over "hand_l_middle_joint2" (
+            delete apiSchemas = ["PhysicsDriveAPI:angular"]
+            prepend apiSchemas = ["PhysxMimicJointAPI:rotX"]
+        )
+        {
+            float physxJoint:maxJointVelocity = 1000000
+            float physxMimicJoint:rotX:gearing = -1
+            rel physxMimicJoint:rotX:referenceJoint = </G1/joints/hand_l_index_joint1>
+            float state:angular:physics:position = 0
+            float state:angular:physics:velocity = 0
+        }
+
+        over "hand_l_ring_joint2" (
+            delete apiSchemas = ["PhysicsDriveAPI:angular"]
+            prepend apiSchemas = ["PhysxMimicJointAPI:rotX"]
+        )
+        {
+            float physxJoint:maxJointVelocity = 1000000
+            float physxMimicJoint:rotX:gearing = -1
+            rel physxMimicJoint:rotX:referenceJoint = </G1/joints/hand_l_index_joint1>
+            float state:angular:physics:position = 0
+            float state:angular:physics:velocity = 0
+        }
+
+        over "hand_l_thumb_joint1" (
+            delete apiSchemas = ["PhysicsDriveAPI:angular"]
+            prepend apiSchemas = ["PhysxMimicJointAPI:rotX"]
+        )
+        {
+            float physxJoint:maxJointVelocity = 1000000
+            float physxMimicJoint:rotX:gearing = -0.25
+            rel physxMimicJoint:rotX:referenceJoint = </G1/joints/hand_l_index_joint1>
+            float state:angular:physics:position = 0
+            float state:angular:physics:velocity = 0
+        }
+
+        over "hand_r_index_joint2" (
+            delete apiSchemas = ["PhysicsDriveAPI:angular"]
+            prepend apiSchemas = ["PhysxMimicJointAPI:rotX"]
+        )
+        {
+            float drive:angular:physics:targetPosition = 0
+            float physxJoint:maxJointVelocity = 1000000
+            float physxMimicJoint:rotX:gearing = -1
+            rel physxMimicJoint:rotX:referenceJoint = </G1/joints/hand_r_index_joint1>
+            float state:angular:physics:position = 0
+            float state:angular:physics:velocity = 0
+        }
+
+        over "hand_r_little_joint2" (
+            active = true
+            delete apiSchemas = ["PhysicsDriveAPI:angular", "PhysxMimicJointAPI:rotX"]
+            prepend apiSchemas = ["PhysxMimicJointAPI:rotX"]
+        )
+        {
+            float physxJoint:maxJointVelocity = 1000000
+            float physxMimicJoint:rotX:gearing = -1
+            rel physxMimicJoint:rotX:referenceJoint = </G1/joints/hand_r_index_joint1>
+            float state:angular:physics:position = 0
+            float state:angular:physics:velocity = 0
+        }
+
+        over "hand_r_middle_joint2" (
+            active = true
+            delete apiSchemas = ["PhysicsDriveAPI:angular", "PhysxMimicJointAPI:rotX"]
+            prepend apiSchemas = ["PhysxMimicJointAPI:rotX"]
+        )
+        {
+            float physxJoint:maxJointVelocity = 1000000
+            float physxMimicJoint:rotX:gearing = -1
+            rel physxMimicJoint:rotX:referenceJoint = </G1/joints/hand_r_index_joint1>
+            float state:angular:physics:position = 0
+            float state:angular:physics:velocity = 0
+        }
+
+        over "hand_r_ring_joint2" (
+            active = true
+            delete apiSchemas = ["PhysicsDriveAPI:angular", "PhysxMimicJointAPI:rotX"]
+            prepend apiSchemas = ["PhysxMimicJointAPI:rotX"]
+        )
+        {
+            float physxJoint:maxJointVelocity = 1000000
+            float physxMimicJoint:rotX:gearing = -1
+            rel physxMimicJoint:rotX:referenceJoint = </G1/joints/hand_r_index_joint1>
+            float state:angular:physics:position = 0
+            float state:angular:physics:velocity = 0
+        }
+
+        over "hand_r_thumb_joint1" (
+            active = true
+            delete apiSchemas = ["PhysicsDriveAPI:angular", "PhysicsJointStateAPI:angular"]
+            prepend apiSchemas = ["PhysxMimicJointAPI:rotX"]
+        )
+        {
+            float drive:angular:physics:damping = 10
+            float drive:angular:physics:stiffness = 100
+            float drive:angular:physics:targetPosition = -75.5
+            float physxJoint:maxJointVelocity = 1000000
+            float physxMimicJoint:rotX:gearing = -0.25
+            rel physxMimicJoint:rotX:referenceJoint = </G1/joints/hand_r_index_joint1>
+        }
+
+        over "hand_l_thumb_joint2" (
+            delete apiSchemas = ["PhysicsDriveAPI:angular"]
+            prepend apiSchemas = ["PhysxMimicJointAPI:rotX"]
+        )
+        {
+            float physxJoint:maxJointVelocity = 1000000
+            float physxMimicJoint:rotX:gearing = -0.5
+            rel physxMimicJoint:rotX:referenceJoint = </G1/joints/hand_l_index_joint1>
+            float state:angular:physics:position = 0
+            float state:angular:physics:velocity = 0
+        }
+
+        over "hand_r_thumb_joint2" (
+            active = true
+            delete apiSchemas = ["PhysicsDriveAPI:angular", "PhysicsJointStateAPI:angular"]
+            prepend apiSchemas = ["PhysxMimicJointAPI:rotX"]
+        )
+        {
+            float physxJoint:maxJointVelocity = 1000000
+            float physxMimicJoint:rotX:gearing = -0.5
+            rel physxMimicJoint:rotX:referenceJoint = </G1/joints/hand_r_index_joint1>
+        }
+
+        over "hand_l_thumb_3_joint" (
+            delete apiSchemas = ["PhysicsDriveAPI:angular"]
+            prepend apiSchemas = ["PhysxMimicJointAPI:rotX"]
+        )
+        {
+            float physxJoint:maxJointVelocity = 1000000
+            float physxMimicJoint:rotX:gearing = -0.4
+            rel physxMimicJoint:rotX:referenceJoint = </G1/joints/hand_l_index_joint1>
+            float state:angular:physics:position = 0
+            float state:angular:physics:velocity = 0
+        }
+
+        over "hand_r_thumb_3_joint" (
+            active = true
+            delete apiSchemas = ["PhysicsDriveAPI:angular"]
+            prepend apiSchemas = ["PhysxMimicJointAPI:rotX"]
+        )
+        {
+            float physxJoint:maxJointVelocity = 1000000
+            float physxMimicJoint:rotX:gearing = -0.4
+            rel physxMimicJoint:rotX:referenceJoint = </G1/joints/hand_r_index_joint1>
+            float state:angular:physics:position = 5.387369e-8
+            float state:angular:physics:velocity = 3.256888e-11
+        }
+
+        over "hand_l_thumb_joint3"
+        {
+            float drive:angular:physics:damping = 1
+            float drive:angular:physics:stiffness = 10
+            float physxJoint:maxJointVelocity = 1000000
+            float state:angular:physics:position = 0
+            float state:angular:physics:velocity = 0
+        }
+
+        over "hand_r_thumb_joint3"
+        {
+            float drive:angular:physics:damping = 1
+            float drive:angular:physics:stiffness = 10
+            float physxJoint:maxJointVelocity = 1000000
+            float state:angular:physics:position = 0
+            float state:angular:physics:velocity = 0
+        }
+
+        over "idx92_gripper_r_center_joint"
+        {
+            rel physics:body0 = </G1/hand_r_base_link>
+            rel physics:body1 = </G1/hand_r_center_link>
+            point3f physics:localPos0 = (-0.030000005, 0.06500002, 0.11491474)
+            point3f physics:localPos1 = (0.0008001538, -0.0005200878, 0.000584181)
+            quatf physics:localRot0 = (1, -2.134537e-14, -3.212424e-15, 1.2020437e-15)
+            quatf physics:localRot1 = (0.7071067, -1.1008906e-7, 1.856409e-8, 0.7071068)
+        }
+
+        over "idx52_gripper_l_center_joint"
+        {
+            rel physics:body0 = </G1/hand_l_base_link>
+            rel physics:body1 = </G1/hand_l_center_link>
+            point3f physics:localPos0 = (0.029999997, 0.064999916, 0.11668739)
+            point3f physics:localPos1 = (0.00079991564, 0.0005200134, 0.0002573741)
+            quatf physics:localRot0 = (1, 3.4228414e-8, 2.1568854e-17, 3.013914e-15)
+            quatf physics:localRot1 = (0.7071067, -4.649138e-8, -1.5326154e-7, 0.7071068)
+        }
+    }
+
+    over "Looks"
+    {
+        over "Black_002"
+        {
+            over "Black_002"
+            {
+                float inputs:reflection_roughness_constant = 0.35
+            }
+        }
+
+        over "material_1___Default"
+        {
+            over "material_1___Default"
+            {
+                color3f inputs:diffuse_color_constant = (0.144, 0.14221951, 0.13641113)
+                float inputs:metallic_constant = 0
+                float inputs:reflection_roughness_constant = 0.5
+            }
+        }
+
+        over "material_3___Default"
+        {
+            over "material_3___Default"
+            {
+                color3f inputs:diffuse_color_constant = (0.555, 0.4350001, 0.4350001)
+                float inputs:metallic_constant = 1
+                float inputs:reflection_roughness_constant = 0.32
+            }
+        }
+
+        over "material_7___Default"
+        {
+            over "material_7___Default"
+            {
+                color3f inputs:diffuse_color_constant = (0.155, 0.155, 0.155)
+                float inputs:metallic_constant = 1
+                float inputs:reflection_roughness_constant = 0.47
+            }
+        }
+
+        over "material_2___Default"
+        {
+            over "material_2___Default"
+            {
+                color3f inputs:diffuse_color_constant = (0.004, 0.004, 0.004)
+            }
+        }
+
+        def Material "Black_03"
+        {
+            token outputs:mdl:displacement.connect = </G1/Looks/Black_03/Black_002.outputs:out>
+            token outputs:mdl:surface.connect = </G1/Looks/Black_03/Black_002.outputs:out>
+            token outputs:mdl:volume.connect = </G1/Looks/Black_03/Black_002.outputs:out>
+
+            def Shader "Black_002"
+            {
+                uniform token info:implementationSource = "sourceAsset"
+                uniform asset info:mdl:sourceAsset = @OmniPBR.mdl@
+                uniform token info:mdl:sourceAsset:subIdentifier = "OmniPBR"
+                color3f inputs:diffuse_color_constant = (0, 0, 0) (
+                    customData = {
+                        float3 default = (1, 1, 1)
+                        dictionary range = {
+                            float3 max = (1, 1, 1)
+                            float3 min = (0, 0, 0)
+                        }
+                    }
+                    displayGroup = "Albedo"
+                    displayName = "Base Color"
+                )
+                color3f inputs:emissive_color = (1, 1, 1) (
+                    customData = {
+                        float3 default = (1, 1, 1)
+                        dictionary range = {
+                            float3 max = (1, 1, 1)
+                            float3 min = (0, 0, 0)
+                        }
+                    }
+                    displayGroup = "Emissive"
+                    displayName = "Emissive Color"
+                )
+                float inputs:emissive_intensity = 10000 (
+                    customData = {
+                        float default = 10000
+                        dictionary range = {
+                            float max = 100000
+                            float min = 0
+                        }
+                    }
+                    displayGroup = "Emissive"
+                    displayName = "Emissive Intensity"
+                )
+                bool inputs:enable_emission = 0 (
+                    customData = {
+                        bool default = 0
+                    }
+                    displayGroup = "Emissive"
+                    displayName = "Enable Emission"
+                )
+                bool inputs:enable_opacity = 0 (
+                    customData = {
+                        bool default = 0
+                    }
+                    displayGroup = "Opacity"
+                    displayName = "Enable Opacity"
+                )
+                bool inputs:enable_opacity_texture = 0 (
+                    customData = {
+                        bool default = 0
+                    }
+                    displayGroup = "Opacity"
+                    displayName = "Enable Opacity Texture"
+                )
+                float inputs:opacity_constant = 1 (
+                    customData = {
+                        float default = 1
+                        dictionary range = {
+                            float max = 1
+                            float min = 0
+                        }
+                    }
+                    displayGroup = "Opacity"
+                    displayName = "Opacity Amount"
+                )
+                int inputs:opacity_mode = 1 (
+                    customData = {
+                        int default = 1
+                        dictionary range = {
+                            int max = 3
+                            int min = 0
+                        }
+                    }
+                    displayGroup = "Opacity"
+                    displayName = "Opacity Mono Source"
+                    renderType = "::base::mono_mode"
+                    sdrMetadata = {
+                        string __SDR__enum_value = "mono_average"
+                        string options = "mono_alpha:0|mono_average:1|mono_luminance:2|mono_maximum:3"
+                    }
+                )
+                float inputs:opacity_threshold = 0 (
+                    customData = {
+                        float default = 0
+                        dictionary range = {
+                            float max = 1
+                            float min = 0
+                        }
+                    }
+                    displayGroup = "Opacity"
+                    displayName = "Opacity Threshold"
+                )
+                float inputs:reflection_roughness_constant = 0.82
+                float inputs:texture_rotate = 0 (
+                    customData = {
+                        float default = 0
+                        dictionary range = {
+                            float max = 360
+                            float min = 0
+                        }
+                    }
+                    displayGroup = "UV"
+                    displayName = "Texture Rotate"
+                )
+                float2 inputs:texture_scale = (1, 1) (
+                    customData = {
+                        float2 default = (1, 1)
+                    }
+                    displayGroup = "UV"
+                    displayName = "Texture Scale"
+                )
+                float2 inputs:texture_translate = (0, 0) (
+                    customData = {
+                        float2 default = (0, 0)
+                    }
+                    displayGroup = "UV"
+                    displayName = "Texture Translate"
+                )
+                token outputs:out
+            }
+        }
+
+        over "ml_Silver" (
+            active = true
+        )
+        {
+            over "ml_Silver"
+            {
+                float inputs:albedo_add = 0
+                float inputs:albedo_brightness = 1
+                float inputs:albedo_desaturation = 1
+                color3f inputs:diffuse_color_constant = (0.5, 0.5, 0.5)
+                asset inputs:diffuse_texture = @@ (
+                    colorSpace = "sRGB"
+                )
+                float inputs:metallic_constant = 1
+                bool inputs:project_uvw = 0
+                float inputs:reflection_roughness_constant = 0.29999998
+                float2 inputs:texture_scale = (1, 1)
+                bool inputs:world_or_object = 0
+            }
+        }
+
+        def Material "ml_Silver_01"
+        {
+            token outputs:mdl:displacement.connect = </G1/Looks/ml_Silver_01/Shader.outputs:out>
+            token outputs:mdl:surface.connect = </G1/Looks/ml_Silver_01/Shader.outputs:out>
+            token outputs:mdl:volume.connect = </G1/Looks/ml_Silver_01/Shader.outputs:out>
+
+            def Shader "Shader"
+            {
+                uniform token info:implementationSource = "sourceAsset"
+                uniform asset info:mdl:sourceAsset = @OmniPBR.mdl@
+                uniform token info:mdl:sourceAsset:subIdentifier = "OmniPBR"
+                float inputs:albedo_desaturation = 0
+                asset inputs:diffuse_texture = @./configuration/Texture/T_ALb.png@ (
+                    colorSpace = "auto"
+                )
+                bool inputs:enable_ORM_texture = 0
+                float inputs:metallic_constant = 1
+                float inputs:reflection_roughness_constant = 0.5
+                token outputs:out (
+                    renderType = "material"
+                )
+            }
+        }
+
+        def Material "ml_Silver_02"
+        {
+            token outputs:mdl:displacement.connect = </G1/Looks/ml_Silver_02/Shader.outputs:out>
+            token outputs:mdl:surface.connect = </G1/Looks/ml_Silver_02/Shader.outputs:out>
+            token outputs:mdl:volume.connect = </G1/Looks/ml_Silver_02/Shader.outputs:out>
+
+            def Shader "Shader"
+            {
+                uniform token info:implementationSource = "sourceAsset"
+                uniform asset info:mdl:sourceAsset = @OmniPBR.mdl@
+                uniform token info:mdl:sourceAsset:subIdentifier = "OmniPBR"
+                float inputs:albedo_desaturation = 0
+                float2 inputs:detail_texture_scale = (1, 1)
+                asset inputs:diffuse_texture = @./configuration/Texture/T_ALb_02.png@ (
+                    colorSpace = "auto"
+                )
+                bool inputs:enable_ORM_texture = 0
+                float inputs:metallic_constant = 1
+                float inputs:reflection_roughness_constant = 0.5
+                float2 inputs:texture_scale = (1, 1)
+                float2 inputs:texture_translate = (0, 0)
+                token outputs:out (
+                    renderType = "material"
+                )
+            }
+        }
+
+        def Material "Black_04"
+        {
+            token outputs:mdl:displacement.connect = </G1/Looks/Black_04/Black_002.outputs:out>
+            token outputs:mdl:surface.connect = </G1/Looks/Black_04/Black_002.outputs:out>
+            token outputs:mdl:volume.connect = </G1/Looks/Black_04/Black_002.outputs:out>
+
+            def Shader "Black_002"
+            {
+                uniform token info:implementationSource = "sourceAsset"
+                uniform asset info:mdl:sourceAsset = @OmniPBR.mdl@
+                uniform token info:mdl:sourceAsset:subIdentifier = "OmniPBR"
+                color3f inputs:diffuse_color_constant = (0, 0, 0) (
+                    customData = {
+                        float3 default = (1, 1, 1)
+                        dictionary range = {
+                            float3 max = (1, 1, 1)
+                            float3 min = (0, 0, 0)
+                        }
+                    }
+                    displayGroup = "Albedo"
+                    displayName = "Base Color"
+                )
+                color3f inputs:emissive_color = (1, 1, 1) (
+                    customData = {
+                        float3 default = (1, 1, 1)
+                        dictionary range = {
+                            float3 max = (1, 1, 1)
+                            float3 min = (0, 0, 0)
+                        }
+                    }
+                    displayGroup = "Emissive"
+                    displayName = "Emissive Color"
+                )
+                float inputs:emissive_intensity = 10000 (
+                    customData = {
+                        float default = 10000
+                        dictionary range = {
+                            float max = 100000
+                            float min = 0
+                        }
+                    }
+                    displayGroup = "Emissive"
+                    displayName = "Emissive Intensity"
+                )
+                bool inputs:enable_emission = 0 (
+                    customData = {
+                        bool default = 0
+                    }
+                    displayGroup = "Emissive"
+                    displayName = "Enable Emission"
+                )
+                bool inputs:enable_opacity = 0 (
+                    customData = {
+                        bool default = 0
+                    }
+                    displayGroup = "Opacity"
+                    displayName = "Enable Opacity"
+                )
+                bool inputs:enable_opacity_texture = 0 (
+                    customData = {
+                        bool default = 0
+                    }
+                    displayGroup = "Opacity"
+                    displayName = "Enable Opacity Texture"
+                )
+                float inputs:opacity_constant = 1 (
+                    customData = {
+                        float default = 1
+                        dictionary range = {
+                            float max = 1
+                            float min = 0
+                        }
+                    }
+                    displayGroup = "Opacity"
+                    displayName = "Opacity Amount"
+                )
+                int inputs:opacity_mode = 1 (
+                    customData = {
+                        int default = 1
+                        dictionary range = {
+                            int max = 3
+                            int min = 0
+                        }
+                    }
+                    displayGroup = "Opacity"
+                    displayName = "Opacity Mono Source"
+                    renderType = "::base::mono_mode"
+                    sdrMetadata = {
+                        string __SDR__enum_value = "mono_average"
+                        string options = "mono_alpha:0|mono_average:1|mono_luminance:2|mono_maximum:3"
+                    }
+                )
+                float inputs:opacity_threshold = 0 (
+                    customData = {
+                        float default = 0
+                        dictionary range = {
+                            float max = 1
+                            float min = 0
+                        }
+                    }
+                    displayGroup = "Opacity"
+                    displayName = "Opacity Threshold"
+                )
+                float inputs:reflection_roughness_constant = 0
+                float inputs:texture_rotate = 0 (
+                    customData = {
+                        float default = 0
+                        dictionary range = {
+                            float max = 360
+                            float min = 0
+                        }
+                    }
+                    displayGroup = "UV"
+                    displayName = "Texture Rotate"
+                )
+                float2 inputs:texture_scale = (1, 1) (
+                    customData = {
+                        float2 default = (1, 1)
+                    }
+                    displayGroup = "UV"
+                    displayName = "Texture Scale"
+                )
+                float2 inputs:texture_translate = (0, 0) (
+                    customData = {
+                        float2 default = (0, 0)
+                    }
+                    displayGroup = "UV"
+                    displayName = "Texture Translate"
+                )
+                token outputs:out
+            }
+        }
+    }
+
+    def Material "HandMaterial" (
+        prepend apiSchemas = ["PhysicsMaterialAPI", "PhysxMaterialAPI"]
+    )
+    {
+        float physics:dynamicFriction = 1
+        float physics:restitution = 0.1
+        float physics:staticFriction = 1
+        uniform token physxMaterial:frictionCombineMode = "max"
+    }
+
+    over "hand_r_base_link" (
+        prepend apiSchemas = ["PhysxRigidBodyAPI"]
+    )
+    {
+        bool physxRigidBody:disableGravity = 1
+
+        over "collisions" (
+            prepend apiSchemas = ["PhysxConvexDecompositionCollisionAPI", "PhysxConvexHullCollisionAPI", "MaterialBindingAPI"]
+        )
+        {
+            rel material:binding:physics = </G1/HandMaterial> (
+                bindMaterialAs = "weakerThanDescendants"
+            )
+        }
+
+        over "visuals" (
+            active = true
+            instanceable = false
+        )
+        {
+            token visibility = "inherited"
+
+            over "R_base_link" (
+                prepend apiSchemas = ["MaterialBindingAPI"]
+            )
+            {
+                rel material:binding = None (
+                    bindMaterialAs = "strongerThanDescendants"
+                )
+
+                over "mesh" (
+                    prepend apiSchemas = ["MaterialBindingAPI"]
+                )
+                {
+                    rel material:binding = None (
+                        bindMaterialAs = "strongerThanDescendants"
+                    )
+
+                    over "ml_Silver" (
+                        prepend apiSchemas = ["MaterialBindingAPI"]
+                    )
+                    {
+                        rel material:binding = </G1/Looks/ml_Silver_01> (
+                            bindMaterialAs = "weakerThanDescendants"
+                        )
+                    }
+
+                    over "ml_black" (
+                        prepend apiSchemas = ["MaterialBindingAPI"]
+                    )
+                    {
+                        rel material:binding = </G1/Looks/Black_03> (
+                            bindMaterialAs = "weakerThanDescendants"
+                        )
+                    }
+                }
+            }
+
+            over "flange"
+            {
+                double3 xformOp:translate = (0, 0.00108, -0.02800000086426735)
+
+                over "mesh" (
+                    prepend apiSchemas = ["MaterialBindingAPI"]
+                )
+                {
+                    rel material:binding = </G1/Looks/ml_Silver_01> (
+                        bindMaterialAs = "weakerThanDescendants"
+                    )
+                }
+            }
+        }
+
+        def Camera "Right_Camera" (
+            active = true
+        )
+        {
+            token cameraProjectionType = "pinhole" (
+                allowedTokens = ["pinhole", "fisheyePolynomial", "fisheyeSpherical", "fisheyeKannalaBrandtK3", "fisheyeRadTanThinPrism", "omniDirectionalStereo"]
+            )
+            float2 clippingRange = (0.01, 10000000)
+            float fisheyeResolutionBudget = 1.5
+            float focalLength = 1.3000001
+            float focusDistance = 400
+            float horizontalAperture = 3.7601311
+            bool omni:kit:cameraLock = 1
+            custom uniform vector3d omni:kit:centerOfInterest = (0, 0, -0.252056884844326)
+            float p0 = -0.00036721907
+            float verticalAperture = 2.1307867
+            token visibility = "invisible"
+            quatd xformOp:orient = (0.47808286188145965, 0.6386860603947189, -0.6005376972616899, 0.053585143466577036)
+            double3 xformOp:scale = (1, 1, 1)
+            double3 xformOp:translate = (-0.10663236905933571, -0.024589535755819902, 0.034427031904090244)
+            uniform token[] xformOpOrder = ["xformOp:translate", "xformOp:orient", "xformOp:scale"]
+        }
+    }
+
+    over "hand_r_index_link1" (
+        prepend apiSchemas = ["PhysxRigidBodyAPI"]
+    )
+    {
+        bool physxRigidBody:disableGravity = 1
+        token visibility = "inherited"
+
+        over "collisions" (
+            prepend apiSchemas = ["MaterialBindingAPI"]
+        )
+        {
+            rel material:binding:physics = </G1/HandMaterial> (
+                bindMaterialAs = "weakerThanDescendants"
+            )
+        }
+
+        over "visuals" (
+            instanceable = false
+        )
+        {
+            over "R_index_1" (
+                prepend apiSchemas = ["MaterialBindingAPI"]
+            )
+            {
+                rel material:binding = None (
+                    bindMaterialAs = "strongerThanDescendants"
+                )
+
+                over "mesh" (
+                    prepend apiSchemas = ["MaterialBindingAPI"]
+                )
+                {
+                    rel material:binding = </G1/Looks/Black_03> (
+                        bindMaterialAs = "weakerThanDescendants"
+                    )
+                }
+            }
+        }
+    }
+
+    over "hand_r_index_link2" (
+        prepend apiSchemas = ["PhysxRigidBodyAPI"]
+    )
+    {
+        bool physxRigidBody:disableGravity = 1
+        token visibility = "inherited"
+
+        over "collisions" (
+            prepend apiSchemas = ["MaterialBindingAPI"]
+            instanceable = true
+        )
+        {
+            rel material:binding:physics = </G1/HandMaterial> (
+                bindMaterialAs = "weakerThanDescendants"
+            )
+
+            over "R_index_2"
+            {
+                over "mesh" (
+                    prepend apiSchemas = ["MaterialBindingAPI"]
+                )
+                {
+                    rel material:binding = </G1/Looks/Black_03> (
+                        bindMaterialAs = "weakerThanDescendants"
+                    )
+                }
+            }
+        }
+
+        over "visuals" (
+            instanceable = false
+        )
+        {
+            over "R_index_2" (
+                prepend apiSchemas = ["MaterialBindingAPI"]
+            )
+            {
+                rel material:binding = None
+
+                over "mesh" (
+                    prepend apiSchemas = ["MaterialBindingAPI"]
+                )
+                {
+                    rel material:binding = None (
+                        bindMaterialAs = "weakerThanDescendants"
+                    )
+
+                    over "ml_black" (
+                        prepend apiSchemas = ["MaterialBindingAPI"]
+                    )
+                    {
+                        rel material:binding = </G1/Looks/Black_03> (
+                            bindMaterialAs = "weakerThanDescendants"
+                        )
+                    }
+                }
+            }
+        }
+    }
+
+    over "hand_r_little_link1" (
+        prepend apiSchemas = ["PhysxRigidBodyAPI"]
+    )
+    {
+        bool physxRigidBody:disableGravity = 1
+        token visibility = "inherited"
+
+        over "collisions" (
+            prepend apiSchemas = ["MaterialBindingAPI"]
+            instanceable = false
+        )
+        {
+            rel material:binding:physics = </G1/HandMaterial> (
+                bindMaterialAs = "weakerThanDescendants"
+            )
+
+            over "R_little_1"
+            {
+                over "mesh" (
+                    prepend apiSchemas = ["MaterialBindingAPI"]
+                )
+                {
+                    rel material:binding = </G1/Looks/Black_03> (
+                        bindMaterialAs = "weakerThanDescendants"
+                    )
+                }
+            }
+        }
+
+        over "visuals" (
+            instanceable = false
+        )
+        {
+            over "R_little_1" (
+                prepend apiSchemas = ["MaterialBindingAPI"]
+            )
+            {
+                rel material:binding = None
+
+                over "mesh" (
+                    prepend apiSchemas = ["MaterialBindingAPI"]
+                )
+                {
+                    rel material:binding = </G1/Looks/Black_03> (
+                        bindMaterialAs = "weakerThanDescendants"
+                    )
+                }
+            }
+        }
+    }
+
+    over "hand_r_little_link2" (
+        prepend apiSchemas = ["PhysxRigidBodyAPI"]
+    )
+    {
+        bool physxRigidBody:disableGravity = 1
+        token visibility = "inherited"
+
+        over "collisions" (
+            prepend apiSchemas = ["MaterialBindingAPI"]
+        )
+        {
+            rel material:binding:physics = </G1/HandMaterial> (
+                bindMaterialAs = "weakerThanDescendants"
+            )
+        }
+
+        over "visuals" (
+            instanceable = false
+        )
+        {
+            over "R_little_2" (
+                prepend apiSchemas = ["MaterialBindingAPI"]
+            )
+            {
+                rel material:binding = None
+
+                over "mesh" (
+                    prepend apiSchemas = ["MaterialBindingAPI"]
+                )
+                {
+                    rel material:binding = None (
+                        bindMaterialAs = "weakerThanDescendants"
+                    )
+
+                    over "ml_black" (
+                        prepend apiSchemas = ["MaterialBindingAPI"]
+                    )
+                    {
+                        rel material:binding = </G1/Looks/Black_03> (
+                            bindMaterialAs = "weakerThanDescendants"
+                        )
+                    }
+                }
+            }
+        }
+    }
+
+    over "hand_r_middle_link1" (
+        prepend apiSchemas = ["PhysxRigidBodyAPI"]
+    )
+    {
+        bool physxRigidBody:disableGravity = 1
+        token visibility = "inherited"
+
+        over "collisions" (
+            prepend apiSchemas = ["MaterialBindingAPI"]
+        )
+        {
+            rel material:binding:physics = </G1/HandMaterial> (
+                bindMaterialAs = "weakerThanDescendants"
+            )
+        }
+
+        over "visuals" (
+            instanceable = false
+        )
+        {
+            over "R_middle_1" (
+                prepend apiSchemas = ["MaterialBindingAPI"]
+            )
+            {
+                rel material:binding = None
+
+                over "mesh" (
+                    prepend apiSchemas = ["MaterialBindingAPI"]
+                )
+                {
+                    rel material:binding = </G1/Looks/Black_03> (
+                        bindMaterialAs = "weakerThanDescendants"
+                    )
+                }
+            }
+        }
+    }
+
+    over "hand_r_middle_link2" (
+        prepend apiSchemas = ["PhysxRigidBodyAPI"]
+    )
+    {
+        bool physxRigidBody:disableGravity = 1
+        token visibility = "inherited"
+
+        over "collisions" (
+            prepend apiSchemas = ["MaterialBindingAPI"]
+        )
+        {
+            rel material:binding:physics = </G1/HandMaterial> (
+                bindMaterialAs = "weakerThanDescendants"
+            )
+        }
+
+        over "visuals" (
+            instanceable = false
+        )
+        {
+            over "R_middle_2" (
+                prepend apiSchemas = ["MaterialBindingAPI"]
+            )
+            {
+                rel material:binding = None
+
+                over "mesh" (
+                    prepend apiSchemas = ["MaterialBindingAPI"]
+                )
+                {
+                    rel material:binding = None (
+                        bindMaterialAs = "weakerThanDescendants"
+                    )
+
+                    over "ml_black" (
+                        prepend apiSchemas = ["MaterialBindingAPI"]
+                    )
+                    {
+                        rel material:binding = </G1/Looks/Black_03> (
+                            bindMaterialAs = "weakerThanDescendants"
+                        )
+                    }
+                }
+            }
+        }
+    }
+
+    over "hand_r_ring_link1" (
+        prepend apiSchemas = ["PhysxRigidBodyAPI"]
+    )
+    {
+        bool physxRigidBody:disableGravity = 1
+        token visibility = "inherited"
+
+        over "collisions" (
+            prepend apiSchemas = ["MaterialBindingAPI"]
+        )
+        {
+            rel material:binding:physics = </G1/HandMaterial> (
+                bindMaterialAs = "weakerThanDescendants"
+            )
+        }
+
+        over "visuals" (
+            instanceable = false
+        )
+        {
+            over "R_ring_1" (
+                prepend apiSchemas = ["MaterialBindingAPI"]
+            )
+            {
+                rel material:binding = None
+
+                over "mesh" (
+                    prepend apiSchemas = ["MaterialBindingAPI"]
+                )
+                {
+                    rel material:binding = </G1/Looks/Black_03> (
+                        bindMaterialAs = "weakerThanDescendants"
+                    )
+                }
+            }
+        }
+    }
+
+    over "hand_r_ring_link2" (
+        prepend apiSchemas = ["PhysxRigidBodyAPI"]
+    )
+    {
+        bool physxRigidBody:disableGravity = 1
+        token visibility = "inherited"
+
+        over "collisions" (
+            prepend apiSchemas = ["MaterialBindingAPI"]
+        )
+        {
+            rel material:binding:physics = </G1/HandMaterial> (
+                bindMaterialAs = "weakerThanDescendants"
+            )
+        }
+
+        over "visuals" (
+            instanceable = false
+        )
+        {
+            over "R_ring_2" (
+                prepend apiSchemas = ["MaterialBindingAPI"]
+            )
+            {
+                rel material:binding = None
+
+                over "mesh" (
+                    prepend apiSchemas = ["MaterialBindingAPI"]
+                )
+                {
+                    rel material:binding = None (
+                        bindMaterialAs = "weakerThanDescendants"
+                    )
+
+                    over "ml_black" (
+                        prepend apiSchemas = ["MaterialBindingAPI"]
+                    )
+                    {
+                        rel material:binding = </G1/Looks/Black_03> (
+                            bindMaterialAs = "weakerThanDescendants"
+                        )
+                    }
+                }
+            }
+        }
+    }
+
+    over "hand_r_thumb_link0" (
+        prepend apiSchemas = ["PhysxRigidBodyAPI"]
+    )
+    {
+        bool physxRigidBody:disableGravity = 1
+        token visibility = "inherited"
+
+        over "collisions" (
+            prepend apiSchemas = ["MaterialBindingAPI"]
+        )
+        {
+            rel material:binding:physics = </G1/HandMaterial> (
+                bindMaterialAs = "weakerThanDescendants"
+            )
+        }
+
+        over "visuals" (
+            instanceable = false
+        )
+        {
+            over "R_thumb_swing" (
+                prepend apiSchemas = ["MaterialBindingAPI"]
+            )
+            {
+                rel material:binding = None
+
+                over "mesh" (
+                    prepend apiSchemas = ["MaterialBindingAPI"]
+                )
+                {
+                    rel material:binding = </G1/Looks/Black_03> (
+                        bindMaterialAs = "weakerThanDescendants"
+                    )
+                }
+            }
+        }
+    }
+
+    over "hand_r_thumb_link1" (
+        prepend apiSchemas = ["PhysxRigidBodyAPI"]
+    )
+    {
+        bool physxRigidBody:disableGravity = 1
+        token visibility = "inherited"
+
+        over "collisions" (
+            prepend apiSchemas = ["MaterialBindingAPI"]
+        )
+        {
+            rel material:binding:physics = </G1/HandMaterial> (
+                bindMaterialAs = "weakerThanDescendants"
+            )
+        }
+
+        over "visuals" (
+            instanceable = false
+        )
+        {
+            over "R_thumb_1" (
+                prepend apiSchemas = ["MaterialBindingAPI"]
+            )
+            {
+                rel material:binding = None
+
+                over "mesh" (
+                    prepend apiSchemas = ["MaterialBindingAPI"]
+                )
+                {
+                    rel material:binding = </G1/Looks/Black_03> (
+                        bindMaterialAs = "weakerThanDescendants"
+                    )
+                }
+            }
+        }
+    }
+
+    over "hand_r_thumb_link2" (
+        prepend apiSchemas = ["PhysxRigidBodyAPI"]
+    )
+    {
+        bool physxRigidBody:disableGravity = 1
+        token visibility = "inherited"
+
+        over "collisions" (
+            prepend apiSchemas = ["MaterialBindingAPI"]
+        )
+        {
+            rel material:binding:physics = </G1/HandMaterial> (
+                bindMaterialAs = "weakerThanDescendants"
+            )
+        }
+
+        over "visuals" (
+            instanceable = false
+        )
+        {
+            over "R_thumb_2" (
+                prepend apiSchemas = ["MaterialBindingAPI"]
+            )
+            {
+                rel material:binding = None
+
+                over "mesh" (
+                    prepend apiSchemas = ["MaterialBindingAPI"]
+                )
+                {
+                    rel material:binding = </G1/Looks/Black_03> (
+                        bindMaterialAs = "weakerThanDescendants"
+                    )
+                }
+            }
+        }
+    }
+
+    over "hand_r_thumb_link3" (
+        prepend apiSchemas = ["PhysxRigidBodyAPI"]
+    )
+    {
+        bool physxRigidBody:disableGravity = 1
+        token visibility = "inherited"
+
+        over "collisions" (
+            prepend apiSchemas = ["MaterialBindingAPI"]
+        )
+        {
+            rel material:binding:physics = </G1/HandMaterial> (
+                bindMaterialAs = "weakerThanDescendants"
+            )
+        }
+
+        over "visuals" (
+            instanceable = false
+        )
+        {
+            over "R_thumb_3" (
+                prepend apiSchemas = ["MaterialBindingAPI"]
+            )
+            {
+                rel material:binding = None
+
+                over "mesh" (
+                    prepend apiSchemas = ["MaterialBindingAPI"]
+                )
+                {
+                    rel material:binding = </G1/Looks/Black_03> (
+                        bindMaterialAs = "weakerThanDescendants"
+                    )
+                }
+            }
+        }
+    }
+
+    over "hand_l_base_link" (
+        prepend apiSchemas = ["PhysxRigidBodyAPI"]
+    )
+    {
+        bool physxRigidBody:disableGravity = 1
+        token visibility = "inherited"
+        quatd xformOp:orient = (0.7071065306663517, -0.7071070317066521, 6.181725849728246e-8, -6.617444900424222e-24)
+        double3 xformOp:scale = (1, 1, 1)
+        double3 xformOp:translate = (0.13100001215934753, 0.9219000339508057, 0.9534999132156372)
+        uniform token[] xformOpOrder = ["xformOp:translate", "xformOp:orient", "xformOp:scale"]
+
+        over "collisions" (
+            prepend apiSchemas = ["MaterialBindingAPI"]
+        )
+        {
+            rel material:binding:physics = </G1/HandMaterial> (
+                bindMaterialAs = "weakerThanDescendants"
+            )
+        }
+
+        over "visuals" (
+            active = true
+            instanceable = false
+        )
+        {
+            token visibility = "inherited"
+
+            over "L_base_link" (
+                prepend apiSchemas = ["MaterialBindingAPI"]
+            )
+            {
+                rel material:binding = None
+
+                over "mesh" (
+                    prepend apiSchemas = ["MaterialBindingAPI"]
+                )
+                {
+                    rel material:binding = None (
+                        bindMaterialAs = "weakerThanDescendants"
+                    )
+
+                    over "ml_black" (
+                        prepend apiSchemas = ["MaterialBindingAPI"]
+                    )
+                    {
+                        rel material:binding = </G1/Looks/Black_03> (
+                            bindMaterialAs = "weakerThanDescendants"
+                        )
+                    }
+
+                    over "ml_Silver" (
+                        prepend apiSchemas = ["MaterialBindingAPI"]
+                    )
+                    {
+                        rel material:binding = </G1/Looks/ml_Silver_02> (
+                            bindMaterialAs = "weakerThanDescendants"
+                        )
+                    }
+                }
+            }
+
+            over "flange"
+            {
+                quatd xformOp:orient = (1, 0, 0, 0)
+                double3 xformOp:scale = (1, 1, 1)
+                double3 xformOp:translate = (9.43785327667257e-11, 0.001079379815120074, -0.028000000099293598)
+                uniform token[] xformOpOrder = ["xformOp:translate", "xformOp:orient", "xformOp:scale"]
+
+                over "mesh" (
+                    prepend apiSchemas = ["MaterialBindingAPI"]
+                )
+                {
+                    rel material:binding = </G1/Looks/ml_Silver_02> (
+                        bindMaterialAs = "weakerThanDescendants"
+                    )
+                    quatf xformOp:orient = (1, 0, 0, 0)
+                    float3 xformOp:scale = (1, 1, 1)
+                    double3 xformOp:translate = (0, 0, 0)
+                    uniform token[] xformOpOrder = ["xformOp:translate", "xformOp:orient", "xformOp:scale"]
+                }
+            }
+        }
+
+        def Camera "Left_Camera" (
+            active = true
+        )
+        {
+            token cameraProjectionType = "pinhole" (
+                allowedTokens = ["pinhole", "fisheyePolynomial", "fisheyeSpherical", "fisheyeKannalaBrandtK3", "fisheyeRadTanThinPrism", "omniDirectionalStereo"]
+            )
+            float2 clippingRange = (0.01, 10000000)
+            float fisheyeResolutionBudget = 1.5
+            float focalLength = 1.2
+            float focusDistance = 400
+            float horizontalAperture = 3.7601311
+            bool omni:kit:cameraLock = 1
+            custom uniform vector3d omni:kit:centerOfInterest = (0, 0, -400)
+            float p0 = -0.00036721907
+            float verticalAperture = 2.1307867
+            token visibility = "invisible"
+            quatd xformOp:orient = (0.4780816956028794, 0.6386840621091892, 0.6005404658125507, -0.05358833883249173)
+            double3 xformOp:scale = (1, 1, 1)
+            double3 xformOp:translate = (0.10663, -0.02459, 0.03443)
+            uniform token[] xformOpOrder = ["xformOp:translate", "xformOp:orient", "xformOp:scale"]
+        }
+    }
+
+    over "hand_l_index_link1" (
+        prepend apiSchemas = ["PhysxRigidBodyAPI"]
+    )
+    {
+        bool physxRigidBody:disableGravity = 1
+
+        over "collisions" (
+            prepend apiSchemas = ["MaterialBindingAPI", "PhysxTriangleMeshSimplificationCollisionAPI", "PhysxSphereFillCollisionAPI", "PhysxConvexDecompositionCollisionAPI", "PhysxConvexHullCollisionAPI"]
+        )
+        {
+            rel material:binding:physics = </G1/HandMaterial> (
+                bindMaterialAs = "weakerThanDescendants"
+            )
+            uniform token physics:approximation = "convexHull"
+        }
+
+        over "visuals" (
+            instanceable = false
+        )
+        {
+            over "L_index_1" (
+                prepend apiSchemas = ["MaterialBindingAPI"]
+            )
+            {
+                rel material:binding = None
+
+                over "mesh" (
+                    prepend apiSchemas = ["MaterialBindingAPI"]
+                )
+                {
+                    rel material:binding = </G1/Looks/Black_03> (
+                        bindMaterialAs = "weakerThanDescendants"
+                    )
+                }
+            }
+        }
+    }
+
+    over "hand_l_index_link2" (
+        prepend apiSchemas = ["PhysxRigidBodyAPI"]
+    )
+    {
+        bool physxRigidBody:disableGravity = 1
+
+        over "collisions" (
+            prepend apiSchemas = ["MaterialBindingAPI", "PhysxTriangleMeshSimplificationCollisionAPI", "PhysxSphereFillCollisionAPI", "PhysxConvexDecompositionCollisionAPI", "PhysxConvexHullCollisionAPI"]
+        )
+        {
+            rel material:binding:physics = </G1/HandMaterial> (
+                bindMaterialAs = "weakerThanDescendants"
+            )
+            uniform token physics:approximation = "convexHull"
+        }
+
+        over "visuals" (
+            instanceable = false
+        )
+        {
+            over "L_index_2" (
+                prepend apiSchemas = ["MaterialBindingAPI"]
+            )
+            {
+                rel material:binding = None
+
+                over "mesh" (
+                    prepend apiSchemas = ["MaterialBindingAPI"]
+                )
+                {
+                    rel material:binding = None (
+                        bindMaterialAs = "weakerThanDescendants"
+                    )
+
+                    over "ml_black" (
+                        prepend apiSchemas = ["MaterialBindingAPI"]
+                    )
+                    {
+                        rel material:binding = </G1/Looks/Black_03> (
+                            bindMaterialAs = "weakerThanDescendants"
+                        )
+                    }
+                }
+            }
+        }
+    }
+
+    over "hand_l_little_link1" (
+        prepend apiSchemas = ["PhysxRigidBodyAPI"]
+    )
+    {
+        bool physxRigidBody:disableGravity = 1
+
+        over "collisions" (
+            prepend apiSchemas = ["MaterialBindingAPI", "PhysxTriangleMeshSimplificationCollisionAPI", "PhysxSphereFillCollisionAPI", "PhysxConvexDecompositionCollisionAPI", "PhysxConvexHullCollisionAPI"]
+        )
+        {
+            rel material:binding:physics = </G1/HandMaterial> (
+                bindMaterialAs = "weakerThanDescendants"
+            )
+            uniform token physics:approximation = "convexHull"
+        }
+
+        over "visuals" (
+            instanceable = false
+        )
+        {
+            over "L_little_1" (
+                prepend apiSchemas = ["MaterialBindingAPI"]
+            )
+            {
+                rel material:binding = None
+
+                over "mesh" (
+                    prepend apiSchemas = ["MaterialBindingAPI"]
+                )
+                {
+                    rel material:binding = </G1/Looks/Black_03> (
+                        bindMaterialAs = "weakerThanDescendants"
+                    )
+                }
+            }
+        }
+    }
+
+    over "hand_l_little_link2" (
+        prepend apiSchemas = ["PhysxRigidBodyAPI"]
+    )
+    {
+        bool physxRigidBody:disableGravity = 1
+
+        over "collisions" (
+            prepend apiSchemas = ["MaterialBindingAPI", "PhysxTriangleMeshSimplificationCollisionAPI", "PhysxSphereFillCollisionAPI", "PhysxConvexDecompositionCollisionAPI", "PhysxConvexHullCollisionAPI"]
+        )
+        {
+            rel material:binding:physics = </G1/HandMaterial> (
+                bindMaterialAs = "weakerThanDescendants"
+            )
+            uniform token physics:approximation = "convexHull"
+        }
+
+        over "visuals" (
+            instanceable = false
+        )
+        {
+            over "L_little_2" (
+                prepend apiSchemas = ["MaterialBindingAPI"]
+            )
+            {
+                rel material:binding = None
+
+                over "mesh" (
+                    prepend apiSchemas = ["MaterialBindingAPI"]
+                )
+                {
+                    rel material:binding = None (
+                        bindMaterialAs = "weakerThanDescendants"
+                    )
+
+                    over "ml_black" (
+                        prepend apiSchemas = ["MaterialBindingAPI"]
+                    )
+                    {
+                        rel material:binding = </G1/Looks/Black_03> (
+                            bindMaterialAs = "weakerThanDescendants"
+                        )
+                    }
+                }
+            }
+        }
+    }
+
+    over "hand_l_middle_link1" (
+        prepend apiSchemas = ["PhysxRigidBodyAPI"]
+    )
+    {
+        bool physxRigidBody:disableGravity = 1
+
+        over "collisions" (
+            prepend apiSchemas = ["MaterialBindingAPI", "PhysxTriangleMeshSimplificationCollisionAPI", "PhysxSphereFillCollisionAPI", "PhysxConvexDecompositionCollisionAPI", "PhysxConvexHullCollisionAPI"]
+        )
+        {
+            rel material:binding:physics = </G1/HandMaterial> (
+                bindMaterialAs = "weakerThanDescendants"
+            )
+            uniform token physics:approximation = "convexHull"
+        }
+
+        over "visuals" (
+            instanceable = false
+        )
+        {
+            over "L_middle_1" (
+                prepend apiSchemas = ["MaterialBindingAPI"]
+            )
+            {
+                rel material:binding = None
+
+                over "mesh" (
+                    prepend apiSchemas = ["MaterialBindingAPI"]
+                )
+                {
+                    rel material:binding = </G1/Looks/Black_03> (
+                        bindMaterialAs = "weakerThanDescendants"
+                    )
+                }
+            }
+        }
+    }
+
+    over "hand_l_middle_link2" (
+        prepend apiSchemas = ["PhysxRigidBodyAPI"]
+    )
+    {
+        bool physxRigidBody:disableGravity = 1
+
+        over "collisions" (
+            prepend apiSchemas = ["MaterialBindingAPI", "PhysxTriangleMeshSimplificationCollisionAPI", "PhysxSphereFillCollisionAPI", "PhysxConvexDecompositionCollisionAPI", "PhysxConvexHullCollisionAPI"]
+        )
+        {
+            rel material:binding:physics = </G1/HandMaterial> (
+                bindMaterialAs = "weakerThanDescendants"
+            )
+            uniform token physics:approximation = "convexHull"
+        }
+
+        over "visuals" (
+            instanceable = false
+        )
+        {
+            over "L_middle_2" (
+                prepend apiSchemas = ["MaterialBindingAPI"]
+            )
+            {
+                rel material:binding = None
+
+                over "mesh" (
+                    prepend apiSchemas = ["MaterialBindingAPI"]
+                )
+                {
+                    rel material:binding = None (
+                        bindMaterialAs = "weakerThanDescendants"
+                    )
+
+                    over "ml_black" (
+                        prepend apiSchemas = ["MaterialBindingAPI"]
+                    )
+                    {
+                        rel material:binding = </G1/Looks/Black_03> (
+                            bindMaterialAs = "weakerThanDescendants"
+                        )
+                    }
+                }
+            }
+        }
+    }
+
+    over "hand_l_ring_link1" (
+        prepend apiSchemas = ["PhysxRigidBodyAPI"]
+    )
+    {
+        bool physxRigidBody:disableGravity = 1
+
+        over "collisions" (
+            prepend apiSchemas = ["MaterialBindingAPI", "PhysxTriangleMeshSimplificationCollisionAPI", "PhysxSphereFillCollisionAPI", "PhysxConvexDecompositionCollisionAPI", "PhysxConvexHullCollisionAPI"]
+        )
+        {
+            rel material:binding:physics = </G1/HandMaterial> (
+                bindMaterialAs = "weakerThanDescendants"
+            )
+            uniform token physics:approximation = "convexHull"
+        }
+
+        over "visuals" (
+            instanceable = false
+        )
+        {
+            over "L_ring_1" (
+                prepend apiSchemas = ["MaterialBindingAPI"]
+            )
+            {
+                rel material:binding = None
+
+                over "mesh" (
+                    prepend apiSchemas = ["MaterialBindingAPI"]
+                )
+                {
+                    rel material:binding = </G1/Looks/Black_03> (
+                        bindMaterialAs = "weakerThanDescendants"
+                    )
+                }
+            }
+        }
+    }
+
+    over "hand_l_ring_link2" (
+        prepend apiSchemas = ["PhysxRigidBodyAPI"]
+    )
+    {
+        bool physxRigidBody:disableGravity = 1
+
+        over "collisions" (
+            prepend apiSchemas = ["MaterialBindingAPI", "PhysxTriangleMeshSimplificationCollisionAPI", "PhysxSphereFillCollisionAPI", "PhysxConvexDecompositionCollisionAPI", "PhysxConvexHullCollisionAPI"]
+        )
+        {
+            rel material:binding:physics = </G1/HandMaterial> (
+                bindMaterialAs = "weakerThanDescendants"
+            )
+            uniform token physics:approximation = "convexHull"
+        }
+
+        over "visuals" (
+            instanceable = false
+        )
+        {
+            over "L_ring_2" (
+                prepend apiSchemas = ["MaterialBindingAPI"]
+            )
+            {
+                rel material:binding = None
+
+                over "mesh" (
+                    prepend apiSchemas = ["MaterialBindingAPI"]
+                )
+                {
+                    rel material:binding = None (
+                        bindMaterialAs = "weakerThanDescendants"
+                    )
+
+                    over "ml_black" (
+                        prepend apiSchemas = ["MaterialBindingAPI"]
+                    )
+                    {
+                        rel material:binding = </G1/Looks/Black_03> (
+                            bindMaterialAs = "weakerThanDescendants"
+                        )
+                    }
+                }
+            }
+        }
+    }
+
+    over "hand_l_thumb_link0" (
+        prepend apiSchemas = ["PhysxRigidBodyAPI"]
+    )
+    {
+        bool physxRigidBody:disableGravity = 1
+
+        over "collisions" (
+            prepend apiSchemas = ["MaterialBindingAPI", "PhysxTriangleMeshSimplificationCollisionAPI", "PhysxSphereFillCollisionAPI", "PhysxConvexDecompositionCollisionAPI", "PhysxConvexHullCollisionAPI"]
+        )
+        {
+            rel material:binding:physics = </G1/HandMaterial> (
+                bindMaterialAs = "weakerThanDescendants"
+            )
+            uniform token physics:approximation = "convexHull"
+        }
+
+        over "visuals" (
+            instanceable = false
+        )
+        {
+            over "L_thumb_swing" (
+                prepend apiSchemas = ["MaterialBindingAPI"]
+            )
+            {
+                rel material:binding = None
+
+                over "mesh" (
+                    prepend apiSchemas = ["MaterialBindingAPI"]
+                )
+                {
+                    rel material:binding = </G1/Looks/Black_03> (
+                        bindMaterialAs = "weakerThanDescendants"
+                    )
+                }
+            }
+        }
+    }
+
+    over "hand_l_thumb_link1" (
+        prepend apiSchemas = ["PhysxRigidBodyAPI"]
+    )
+    {
+        bool physxRigidBody:disableGravity = 1
+
+        over "collisions" (
+            prepend apiSchemas = ["MaterialBindingAPI", "PhysxTriangleMeshSimplificationCollisionAPI", "PhysxSphereFillCollisionAPI", "PhysxConvexDecompositionCollisionAPI", "PhysxConvexHullCollisionAPI"]
+        )
+        {
+            rel material:binding:physics = </G1/HandMaterial> (
+                bindMaterialAs = "weakerThanDescendants"
+            )
+            uniform token physics:approximation = "convexHull"
+        }
+
+        over "visuals" (
+            instanceable = false
+        )
+        {
+            over "L_thumb_1" (
+                prepend apiSchemas = ["MaterialBindingAPI"]
+            )
+            {
+                rel material:binding = None
+
+                over "mesh" (
+                    prepend apiSchemas = ["MaterialBindingAPI"]
+                )
+                {
+                    rel material:binding = </G1/Looks/Black_03> (
+                        bindMaterialAs = "weakerThanDescendants"
+                    )
+                }
+            }
+        }
+    }
+
+    over "hand_l_thumb_link2" (
+        prepend apiSchemas = ["PhysxRigidBodyAPI"]
+    )
+    {
+        bool physxRigidBody:disableGravity = 1
+
+        over "collisions" (
+            prepend apiSchemas = ["MaterialBindingAPI", "PhysxTriangleMeshSimplificationCollisionAPI", "PhysxSphereFillCollisionAPI", "PhysxConvexDecompositionCollisionAPI", "PhysxConvexHullCollisionAPI"]
+        )
+        {
+            rel material:binding:physics = </G1/HandMaterial> (
+                bindMaterialAs = "weakerThanDescendants"
+            )
+            uniform token physics:approximation = "convexHull"
+        }
+
+        over "visuals" (
+            instanceable = false
+        )
+        {
+            over "L_thumb_2" (
+                prepend apiSchemas = ["MaterialBindingAPI"]
+            )
+            {
+                rel material:binding = None
+
+                over "mesh" (
+                    prepend apiSchemas = ["MaterialBindingAPI"]
+                )
+                {
+                    rel material:binding = </G1/Looks/Black_03> (
+                        bindMaterialAs = "weakerThanDescendants"
+                    )
+                }
+            }
+        }
+    }
+
+    over "hand_l_thumb_link3" (
+        prepend apiSchemas = ["PhysxRigidBodyAPI"]
+    )
+    {
+        bool physxRigidBody:disableGravity = 1
+
+        over "collisions" (
+            prepend apiSchemas = ["MaterialBindingAPI", "PhysxTriangleMeshSimplificationCollisionAPI", "PhysxSphereFillCollisionAPI", "PhysxConvexDecompositionCollisionAPI", "PhysxConvexHullCollisionAPI"]
+        )
+        {
+            rel material:binding:physics = </G1/HandMaterial> (
+                bindMaterialAs = "weakerThanDescendants"
+            )
+            uniform token physics:approximation = "convexHull"
+        }
+
+        over "visuals" (
+            instanceable = false
+        )
+        {
+            over "L_thumb_3" (
+                prepend apiSchemas = ["MaterialBindingAPI"]
+            )
+            {
+                rel material:binding = None
+
+                over "mesh" (
+                    prepend apiSchemas = ["MaterialBindingAPI"]
+                )
+                {
+                    rel material:binding = </G1/Looks/Black_03> (
+                        bindMaterialAs = "weakerThanDescendants"
+                    )
+                }
+            }
+        }
+    }
+
+    over "hand_l_center_link"
+    {
+        double3 xformOp:translate = (0.16048, 1.03833, 0.8877)
+    }
+
+    over "hand_r_center_link"
+    {
+        quatd xformOp:orient = (0.5000000298023187, 0.49999997019765285, -0.4999998807907006, 0.5000001192092977)
+        double3 xformOp:scale = (1, 1, 1)
+        double3 xformOp:translate = (0.16048, -1.03833, 0.8877)
+        uniform token[] xformOpOrder = ["xformOp:translate", "xformOp:orient", "xformOp:scale"]
+    }
+    variantSet "Physics" = {
+        "None" (
+            prepend references = @./configuration/robot_base.usd@
+        ) {
+            over "joints" (
+                active = false
+            )
+            {
+            }
+
+        }
+        "PhysX" (
+            prepend payload = @./configuration/robot_physics.usd@
+        ) {
+
+        }
+    }
+    variantSet "Sensor" = {
+        "None" {
+
+        }
+        "Sensors" (
+            prepend payload = @./configuration/robot_sensor.usd@
+        ) {
+
+        }
+    }
+}
+
+def "Viewport_Measure" (
+    hide_in_stage_window = true
+    no_delete = true
+)
+{
+}

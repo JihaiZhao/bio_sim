@@ -1,0 +1,90 @@
+# MVP offsets + HARD-CODED layout, SHARED across robots.
+# Robot-specific overrides (cube pose, grasp quat, arm init, base spawn)
+# live in bio_sim/config/robots/<robot>.yaml and are merged on top of this
+# file at load time -- see bio_sim/tasks/pick_place.py:load_full_cfg.
+# Tune these numbers until the runtime grasp plan succeeds (reachability
+# is now manual, by design).
+
+object: object_a
+
+# ===== HARD-CODED LAYOUT (edit these to move things) ==================
+# Board footprint + thickness [len_x, len_y, thickness] (metres).
+table_size: [0.40, 0.40, 0.04]
+# Board B = board A + (nav_dx, 0) in world x. Boards sit nav_dx apart;
+# bio_optica fixtures auto-flank both boards (see scene.fixtures below --
+# update those positions if you change this).
+nav_dx: 4.5
+# Robot yaw (degrees) it turns to at A and B before grasping/placing.
+robot_face_yaw_deg: -90.0
+# =====================================================================
+
+# Declarative scene recipe (genie_sim-style): static fixtures are referenced
+# by their root-relative asset dir (resolved via the asset library /
+# $SIM_ASSETS) + a WORLD pose. No prim geometry is hardcoded here.
+scene:
+  # Graspable object: a USD-backed 96-well plate (~128x85x14.6 mm, ~40 g)
+  # replacing the original 3x10x10 cm proxy cube. The asset is referenced
+  # from assets/objects/well_plate_96/ -- it ships its own RigidBodyAPI +
+  # convexDecomposition collider so _spawn_props doesn't need to attach
+  # those at runtime. NOTE: the plate is THINNER and WIDER than the old
+  # cube, so the per-robot cube_xyz.z and grasp_quat may need a tune --
+  # see bio_sim/config/robots/<robot>.yaml.
+  objects:
+    - name: object_a
+      asset: objects/well_plate_96
+  # TWO bio_optica stainers, one OUTBOARD of each board (not between them).
+  # `position` = mesh FOOTPRINT CENTRE in world (x,y) + base on z;
+  # _spawn_fixtures recentres via the real USD AABB (this asset's mesh sits
+  # ~(-0.95,-0.51) off its prim origin, so raw-translate missed by ~1 m).
+  # Board A x = cube_xyz.x = -0.4; board B x = cube_xyz.x + nav_dx = 2.1;
+  # both on the y=-0.70 work line. Each machine is 1.2 m further OUT in x
+  # (A's outer side = more -x; B's outer side = more +x) so its ~1 m body
+  # stays clear of the grasp/place points (which sit AT the board centres).
+  # Quaternion = (+90 X stand upright) then (+180 Z); shared by both.
+  fixtures:
+    - name: bio_optica_a
+      asset: objects/bio_optica_aus240plus
+      # outer side of board A: x = -0.4 - 1.2 = -1.6
+      position: [-1.5, -1.50, 0.0]
+      quaternion: [0.0, 0.0, 0.70710678, 0.70710678]
+      # 1.7x enlarged (sidecar scale 1.0 -> 1.7). _spawn_fixtures applies
+      # scale BEFORE measuring the AABB, so the footprint recentre stays
+      # correct and `position` need not change.
+      scale: 1.7
+    - name: bio_optica_b
+      asset: objects/bio_optica_aus240plus
+      position: [3.6, -1.25, -1.43024]
+      quaternion: [0.0, 0.0, 0.0, 1.0]
+      scale: 1.7
+
+# Optional small block placed UNDER the plate (one per table) to lift the
+# plate so the gripper fingers have clearance to slide under its edge at
+# grasp time -- without this, the omnipicker's lower finger hits the table
+# top. Footprint MUST be smaller than the plate (~128 x 85 mm) so the
+# fingers wrap around the plate's long edges, not the riser. Set `null`
+# (or omit) to disable. plate cube_xyz.z is AUTO-LIFTED by size.z so the
+# committed per-robot grasp_quat does not need re-tuning for small risers.
+riser:
+  size: [0.06, 0.06, 0.03]   # x, y, z (m). z = how much the plate lifts.
+  color: [0.85, 0.85, 0.85]  # light grey, distinct from the brown table
+
+pre_grasp_dz: 0.12      # m above the grasp for the approach / pre-place
+lift_dz: 0.15           # m to lift after grasping (clears the table)
+retreat_dz: 0.15        # m to lift after releasing
+# Place the carried cube a few cm above the table (planning the gripper+
+# payload exactly to table height collides with the table obstacle); the
+# cube free-falls this gap on release.
+place_clearance_dz: 0.0
+
+# Grasp mechanism: physics | assist
+#   physics = force-controlled friction grasp (validated e2e; realistic).
+#             BUT the G2 swerve base is KINEMATIC: an in-place base turn
+#             during NavigateTo teleports the root, and PhysX cannot
+#             transmit a teleport through a friction contact, so the cube
+#             gets ejected mid-carry (see bio_sim/robot/gripper.py header).
+#   assist  = ASSISTED grasp: additionally weld the object to the grasp
+#             link with a UsdPhysics.FixedJoint at the live contacted
+#             relative pose, so it rigidly follows the gripper through the
+#             kinematic base motion. NOT friction-dependent -> no carry
+#             fly-off. Less physically realistic (rigid attachment).
+grasp_mode: assist

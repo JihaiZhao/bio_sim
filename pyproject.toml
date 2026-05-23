@@ -1,0 +1,49 @@
+[project]
+name = "bio-sim"
+version = "0.1.0"
+description = "Bio-lab pick-and-place simulation (Isaac Sim 5.1 / Isaac Lab 2.3)"
+readme = "README.md"
+# Isaac Sim 5.1 pip wheels are built for CPython 3.11 ONLY.
+requires-python = "==3.11.*"
+dependencies = [
+    # Pinned to the CUDA 12.8 builds (matches the local CUDA 12.8 driver).
+    # The [tool.uv.sources] mapping below forces these off the cu128 index
+    # instead of PyPI's default (CPU) wheels.
+    "torch==2.7.0",
+    "torchvision==0.22.0",
+    # Pulls Isaac Sim 5.1 via the `isaacsim` extra:
+    #   isaacsim[all,extscache]==5.1.0.*  (from pypi.nvidia.com)
+    "isaaclab[isaacsim,all]==2.3.2.post1",
+    # cuRobo: editable install from third_party/curobo (CUDA extension builds
+    # on first sync). MUST be declared here -- otherwise `uv sync` wipes it
+    # from the env as undeclared, taking down g2/r1pro/robot_base imports.
+    # Source path is in [tool.uv.sources] below.
+    "nvidia-curobo",
+    # CLI (python -m bio_sim {list,run}). tyro builds the command tree from
+    # the @dataclass commands in bio_sim/cli.py; rich is pulled transitively
+    # by tyro and used directly for the `list` tables.
+    "tyro>=0.9",
+]
+
+[tool.uv]
+# Isaac Sim's strict transitive pins are spread across PyPI + the NVIDIA
+# index; uv's default "first-index" strategy fails to resolve them.
+# This is the documented workaround for installing Isaac Sim via uv.
+index-strategy = "unsafe-best-match"
+
+# Searched in addition to PyPI (equivalent to --extra-index-url) so the
+# isaacsim-* wheels resolve.
+[[tool.uv.index]]
+name = "nvidia"
+url = "https://pypi.nvidia.com"
+
+# Explicit: only used by packages mapped to it in [tool.uv.sources].
+[[tool.uv.index]]
+name = "pytorch-cu128"
+url = "https://download.pytorch.org/whl/cu128"
+explicit = true
+
+[tool.uv.sources]
+torch = { index = "pytorch-cu128" }
+torchvision = { index = "pytorch-cu128" }
+nvidia-curobo = { path = "third_party/curobo", editable = true }
