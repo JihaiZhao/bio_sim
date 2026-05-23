@@ -53,28 +53,15 @@ class _ResetKey:
         return True
 
     def _reset(self):
-        ctx = self._ctx
-        try:
-            ctx.robot.gripper.release(ctx)  # detach payload + open fingers
-        except Exception:  # noqa: BLE001
-            pass
-        try:
-            ctx.robot.reset_arm()                # arm back to retract/init
-            ctx.robot.reset_gripper()            # SNAP fingers open (PD lag would
-                                                 # otherwise push plate on rerun)
-            ctx.robot.base.reset_pose(
-                *getattr(ctx.robot, "base_start", (0.0, 0.0, 0.0)))
-            name = ctx.scene.objects[0].name
-            # Resample plate xy first (no-op when randomization is disabled)
-            # so reset_object snaps the cube to the new grasp_xyz.
-            ctx.scene.randomize_plate()
-            ctx.scene.reset_object(name)
-            ctx.blackboard.pop("held", None)
-        except Exception as exc:  # noqa: BLE001
-            print(f"[reset] env reset failed: {exc}")
-            return
-        self._runner.restart()
-        print("[reset] env reset done")
+        # Delegate to the shared action bus so R-key and POST /reset run
+        # the exact same code path. See bio_sim/commands.py.
+        from .. import commands
+
+        result = commands.reset_env(self._ctx, self._runner)
+        if result.get("ok"):
+            print("[reset] env reset done")
+        else:
+            print(f"[reset] env reset failed: {result.get('error')}")
 
     def close(self):
         try:
