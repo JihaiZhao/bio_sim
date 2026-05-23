@@ -116,13 +116,24 @@ class _RenderKey:
 
 
 class SimApp:
-    def __init__(self, headless: str | None = None, width: int = 1920, height: int = 1080):
+    def __init__(self, headless: str | None = None, width: int = 1920, height: int = 1080,
+                 livestream: bool = False):
         from isaacsim import SimulationApp  # noqa: WPS433
 
         self._headless = headless
-        self._app = SimulationApp(
-            {"headless": headless is not None, "width": str(width), "height": str(height)}
-        )
+        cfg = {
+            "headless": headless is not None,
+            "width": str(width),
+            "height": str(height),
+        }
+        if livestream:
+            # Enable the WebRTC server backend at boot. Signaling listens
+            # on ws://*:49100 (default in the ext's extension.toml).
+            # See scripts/livestream_smoke.py for the standalone smoke and
+            # the bio-sim-webrtc-livestream memory for the working setup.
+            cfg["extra_args"] = ["--enable", "omni.kit.livestream.webrtc"]
+            cfg["hide_ui"] = False  # streaming a hidden UI is pointless
+        self._app = SimulationApp(cfg)
 
         # Safe to import isaacsim.core now.
         from isaacsim.core.api import World  # noqa: WPS433
@@ -193,13 +204,20 @@ class SimApp:
         self._app.close()
 
     # ---- main loop ----------------------------------------------------
-    def run(self, ctx, runner, on_world_sync=None) -> None:
+    def run(self, ctx, runner, on_world_sync=None,
+            on_pre_tick=None, keep_alive: bool = False) -> None:
         """Pump the sim. Per step, after physics settles:
 
         1. robot.ensure_initialized(ctx)  -- DOF map, drive modes (once)
         2. robot.base_hold(ctx)           -- keep kinematic base from drifting
-        3. on_world_sync(step_index)      -- periodic cuRobo obstacle resync
-        4. runner.tick(ctx)               -- advance the active skill
+        3. on_pre_tick(ctx, runner)       -- external command drain hook
+                                            (bio_sim serve drains HTTP queue here)
+        4. on_world_sync(step_index)      -- periodic cuRobo obstacle resync
+        5. runner.tick(ctx)               -- advance the active skill
+
+        keep_alive=True keeps the loop pumping even when runner.done in
+        headless mode. Used by `bio_sim serve` so the viewport remains
+        streamable and POST /reset can re-arm without relaunch.
         """
         reset_key = None
         render_key = None
@@ -245,6 +263,12 @@ class SimApp:
             if si < SETTLE_UNTIL:
                 continue
 
+            # External-command drain BEFORE world sync: a freshly-injected
+            # POST /reset moves the cube, and obstacle resync needs to see
+            # the new position before the next planning pass.
+            if on_pre_tick is not None:
+                on_pre_tick(ctx, runner)
+
             if on_world_sync is not None:
                 on_world_sync(si)
 
@@ -255,8 +279,11 @@ class SimApp:
                     status = "FAILED" if runner.failed else "COMPLETE"
                     print(f"[sim] task {status}")
                     printed_done = True
-                if self._headless is not None:
-                    break  # automated run: exit so the result is reported
+                # Headless one-shot exits so the result is reported; serve
+                # mode (keep_alive=True) keeps pumping so POST /reset can
+                # re-arm and the WebRTC stream stays live.
+                if self._headless is not None and not keep_alive:
+                    break
                 # Windowed: keep pumping the sim so the result stays visible
                 # AND the R key can reset + re-run the task (runner.restart()
                 # clears .done, so the loop picks the task back up).
