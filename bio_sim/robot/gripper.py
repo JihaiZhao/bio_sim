@@ -84,7 +84,12 @@ class Gripper:
     def __init__(self, robot, mode: str = "physics"):
         self._robot = robot
         self._held = None
-        self._weld_joint_path = None  # assist mode: live FixedJoint prim path
+        # Assist mode: one FixedJoint per env, all created in _weld()
+        # under /World/env_i/{obj}/grasp_weld. Cloner replicates the
+        # robot + plate with IDENTICAL relative geometry, so the
+        # localPos / localRot constants (computed once on env_0) reuse
+        # bit-for-bit across envs.
+        self._weld_joint_paths: list[str] = []
         self.set_mode(mode)
 
     def set_mode(self, mode: str) -> None:
@@ -221,8 +226,9 @@ class Gripper:
         from pxr import Usd, UsdGeom, UsdPhysics, Gf, Sdf
 
         stage = ctx.world.stage
-        link_path = self._robot.grasp_link_path(stage)   # grasp_link prim
-        obj_path = f"{self._robot.env_root}/{obj_name}"
+        env_root = self._robot.env_root
+        link_path = self._robot.grasp_link_path(stage)   # env_0 grasp_link
+        obj_path = f"{env_root}/{obj_name}"
         if not stage.GetPrimAtPath(obj_path).IsValid():
             raise RuntimeError(f"_weld: no prim at {obj_path}")
 
@@ -278,23 +284,34 @@ class Gripper:
                   f"grasp_link {s0.tolist()} obj {s1.tolist()} -- "
                   f"localPos0 divided by grasp_link scale; verify weld.")
 
-        joint_path = f"{obj_path}/grasp_weld"
-        j = UsdPhysics.FixedJoint.Define(stage, Sdf.Path(joint_path))
-        j.CreateBody0Rel().SetTargets([Sdf.Path(link_path)])
-        j.CreateBody1Rel().SetTargets([Sdf.Path(obj_path)])
-        # body0 (grasp_link) frame = object's CURRENT pose in link space;
-        # body1 (object) frame = identity -> the constraint holds the live
-        # offset (no snap, no stale spawn error).
-        j.CreateLocalPos0Attr().Set(
-            Gf.Vec3f(*[float(x) for x in rel_p_local0]))
-        j.CreateLocalRot0Attr().Set(
-            Gf.Quatf(float(rel_q[0]),
-                     Gf.Vec3f(float(rel_q[1]), float(rel_q[2]),
-                              float(rel_q[3]))))
-        j.CreateLocalPos1Attr().Set(Gf.Vec3f(0.0, 0.0, 0.0))
-        j.CreateLocalRot1Attr().Set(Gf.Quatf(1.0))
-        self._weld_joint_path = joint_path
-        print(f"[gripper] assist-mode weld: FixedJoint {joint_path} "
+        # Phase 4: one FixedJoint per env. Clones share IDENTICAL relative
+        # geometry (Cloner is a rigid translation), so the same (rel_p,
+        # rel_q) authoring works for every env_i once the body0/body1
+        # paths are re-prefixed.
+        num_envs = max(1, int(getattr(self._robot, "_num_envs", 1)))
+        link_rel = link_path[len(env_root):]   # leading "/" preserved
+        obj_rel = obj_path[len(env_root):]
+        self._weld_joint_paths = []
+        for i in range(num_envs):
+            env_i_root = f"/World/env_{i}"
+            link_path_i = f"{env_i_root}{link_rel}"
+            obj_path_i = f"{env_i_root}{obj_rel}"
+            joint_path_i = f"{obj_path_i}/grasp_weld"
+            j = UsdPhysics.FixedJoint.Define(stage, Sdf.Path(joint_path_i))
+            j.CreateBody0Rel().SetTargets([Sdf.Path(link_path_i)])
+            j.CreateBody1Rel().SetTargets([Sdf.Path(obj_path_i)])
+            j.CreateLocalPos0Attr().Set(
+                Gf.Vec3f(*[float(x) for x in rel_p_local0]))
+            j.CreateLocalRot0Attr().Set(
+                Gf.Quatf(float(rel_q[0]),
+                         Gf.Vec3f(float(rel_q[1]), float(rel_q[2]),
+                                  float(rel_q[3]))))
+            j.CreateLocalPos1Attr().Set(Gf.Vec3f(0.0, 0.0, 0.0))
+            j.CreateLocalRot1Attr().Set(Gf.Quatf(1.0))
+            self._weld_joint_paths.append(joint_path_i)
+        suffix = (f" (+{num_envs - 1} env clones)" if num_envs > 1 else "")
+        print(f"[gripper] assist-mode weld: FixedJoint "
+              f"{self._weld_joint_paths[0]}{suffix} "
               f"({self._robot.grasp_link} <-> {obj_name}) "
               f"rel_p={np.round(rel_p,4).tolist()}")
 
@@ -310,11 +327,14 @@ class Gripper:
         raise RuntimeError(f"_link_path: '{link_name}' not found under {root}")
 
     def _unweld(self, ctx) -> None:
-        jp = self._weld_joint_path
-        if jp is None:
+        if not self._weld_joint_paths:
             return
         stage = ctx.world.stage
-        if stage.GetPrimAtPath(jp).IsValid():
-            stage.RemovePrim(jp)
-        print(f"[gripper] assist-mode unweld: removed {jp}")
-        self._weld_joint_path = None
+        for jp in self._weld_joint_paths:
+            if stage.GetPrimAtPath(jp).IsValid():
+                stage.RemovePrim(jp)
+        suffix = (f" (+{len(self._weld_joint_paths) - 1} env clones)"
+                  if len(self._weld_joint_paths) > 1 else "")
+        print(f"[gripper] assist-mode unweld: removed "
+              f"{self._weld_joint_paths[0]}{suffix}")
+        self._weld_joint_paths = []
