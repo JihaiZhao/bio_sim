@@ -84,7 +84,8 @@ class RobotBase:
 
     def __init__(self, robot_yml: str,
                  use_urdf_kinematics: bool = False,
-                 reactive: bool = False):
+                 reactive: bool = False,
+                 env_root: str = "/World/env_0"):
         cfg_dir = (_DEFAULT_CFG_DIR if os.path.isdir(_DEFAULT_CFG_DIR)
                    else get_robot_configs_path())
         self.robot_cfg = load_yaml(join_path(cfg_dir, robot_yml))["robot_cfg"]
@@ -100,6 +101,10 @@ class RobotBase:
         self.j_names = kin["cspace"]["joint_names"]
         self.retract_config = kin["cspace"]["retract_config"]
         self._reactive = reactive
+        # env_root is the per-env prim subtree the robot belongs to. Phase 0
+        # plumbing only: load_into still spawns at /World/<usd_robot_root>
+        # until Phase 1 sweeps prim paths under env_root.
+        self.env_root: str = env_root
 
         # Subclass populates these in _init_specifics():
         #   self.grasp_link  (str)            # physical rigid link for weld
@@ -244,7 +249,10 @@ class RobotBase:
 
         kin = self.robot_cfg["kinematics"]
         usd_path = join_path(kin.get("external_asset_path"), kin["usd_path"])
-        self.robot_prim_path = "/World/" + kin["usd_robot_root"].strip("/")
+        # Phase 1: robot spawns UNDER env_root so the whole subtree
+        # (robot + scene props authored by BioScene) is cloneable as one
+        # block by isaacsim.core.cloner.Cloner in Phase 2.
+        self.robot_prim_path = f"{self.env_root}/{kin['usd_robot_root'].strip('/')}"
         add_reference_to_stage(usd_path=usd_path,
                                prim_path=self.robot_prim_path)
         self._robot = sim.world.scene.add(

@@ -145,6 +145,12 @@ class SimApp:
         xform = self.stage.DefinePrim("/World", "Xform")
         self.stage.SetDefaultPrim(xform)
         self.stage.DefinePrim("/curobo", "Xform")
+        # env_0 root for the upcoming multi-env refactor. At Phase 0 this
+        # is just a passthrough Xform -- no prims live under it yet (that's
+        # Phase 1's prim-path prefix sweep). Defining it here so RobotBase
+        # / BioScene can advertise env_root="/World/env_0" without each
+        # caller having to author the prim itself.
+        self.stage.DefinePrim("/World/env_0", "Xform")
 
     # ---- lifecycle ----------------------------------------------------
     @property

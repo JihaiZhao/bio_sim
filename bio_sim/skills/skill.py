@@ -29,12 +29,20 @@ class SkillContext:
     robot : bio_sim.robot.g2.G2Robot (facade: .arm .base .gripper, world frame)
     scene : bio_sim.scene.bio_scene.BioScene (object world poses)
     blackboard : free-form dict for cross-skill state (e.g. grasped object)
+    num_envs : env count for the upcoming multi-env refactor (Phase 0
+               plumbing -- always 1 today; skills still write to a single
+               articulation. Phase 3 will broadcast via ArticulationView.)
+    env_spacing : metres between adjacent env_i along +X (also Phase 0
+                  plumbing; consumed at clone time in Phase 2).
     """
 
-    def __init__(self, world, robot, scene):
+    def __init__(self, world, robot, scene,
+                 num_envs: int = 1, env_spacing: float = 0.0):
         self.world = world
         self.robot = robot
         self.scene = scene
+        self.num_envs = int(num_envs)
+        self.env_spacing = float(env_spacing)
         self.blackboard: dict = {}
 
 

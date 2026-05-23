@@ -217,7 +217,7 @@ class OtOneScene(BioScene):
         stage = self._sim.world.stage
         for fx in self.fixtures:
             asset = load_object(fx.asset)
-            prim_path = f"/World/{fx.name}"
+            prim_path = f"{self.env_root}/{fx.name}"
             add_reference_to_stage(usd_path=asset.usd_path,
                                    prim_path=prim_path)
             prim = stage.GetPrimAtPath(prim_path)
@@ -271,7 +271,7 @@ class OtOneScene(BioScene):
         from pxr import Usd, UsdPhysics
         stage = self._sim.world.stage
         for name in ("table_A", "table_B"):
-            root = stage.GetPrimAtPath(f"/World/{name}")
+            root = stage.GetPrimAtPath(f"{self.env_root}/{name}")
             if not root.IsValid():
                 continue
             for p in Usd.PrimRange(root):
@@ -346,12 +346,11 @@ class OtOneScene(BioScene):
         if step_index == self._last_sync:
             return
         self._last_sync = step_index
-        ignore = [robot_prim_path, "/World/defaultGroundPlane", "/curobo",
-                  "/World/_room", "/World/_lighting"]
-        ignore += [f"/World/{o.name}" for o in self.objects]
-        ignore += [f"/World/{name}" for name in self._otone_aabbs]
+        ignore = [robot_prim_path, "/curobo"]
+        ignore += [f"{self.env_root}/{o.name}" for o in self.objects]
+        ignore += [f"{self.env_root}/{name}" for name in self._otone_aabbs]
         obstacles = self._usd_help.get_obstacles_from_stage(
-            only_paths=["/World"],
+            only_paths=[self.env_root],
             reference_prim_path=robot_prim_path,
             ignore_substring=ignore,
         ).get_collision_check_world()

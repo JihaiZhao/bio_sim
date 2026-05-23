@@ -222,7 +222,7 @@ class Gripper:
 
         stage = ctx.world.stage
         link_path = self._robot.grasp_link_path(stage)   # grasp_link prim
-        obj_path = f"/World/{obj_name}"
+        obj_path = f"{self._robot.env_root}/{obj_name}"
         if not stage.GetPrimAtPath(obj_path).IsValid():
             raise RuntimeError(f"_weld: no prim at {obj_path}")
 

@@ -232,7 +232,11 @@ def _run(cmd: Run) -> None:
     sim.add_extensions()
 
     # 4. build the task + run.
-    ctx = SkillContext(world=sim, robot=robot, scene=scene)
+    ctx = SkillContext(
+        world=sim, robot=robot, scene=scene,
+        num_envs=int(cfg.get("num_envs", 1)),
+        env_spacing=float(cfg.get("env_spacing", 0.0)),
+    )
     runner = SkillRunner(build_task(cfg))
 
     def on_world_sync(step_index):

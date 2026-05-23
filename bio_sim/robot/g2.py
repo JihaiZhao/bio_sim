@@ -27,8 +27,10 @@ from .robot_base import RobotBase
 
 class G2Robot(RobotBase):
     def __init__(self, robot_yml: str = "G2_omnipicker_fixed_dual.yml",
-                 use_urdf_kinematics: bool = False, reactive: bool = False):
-        super().__init__(robot_yml, use_urdf_kinematics, reactive)
+                 use_urdf_kinematics: bool = False, reactive: bool = False,
+                 env_root: str = "/World/env_0"):
+        super().__init__(robot_yml, use_urdf_kinematics, reactive,
+                         env_root=env_root)
 
     def _init_specifics(self) -> None:
         # physical link a grasped object is fixed-jointed to (a real

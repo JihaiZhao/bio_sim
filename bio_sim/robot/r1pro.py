@@ -35,8 +35,10 @@ class R1ProRobot(RobotBase):
     GRIP_HOLD_SQUEEZE = 0.01
 
     def __init__(self, robot_yml: str = "R1Pro_arm_no_torso.yml",
-                 use_urdf_kinematics: bool = False, reactive: bool = False):
-        super().__init__(robot_yml, use_urdf_kinematics, reactive)
+                 use_urdf_kinematics: bool = False, reactive: bool = False,
+                 env_root: str = "/World/env_0"):
+        super().__init__(robot_yml, use_urdf_kinematics, reactive,
+                         env_root=env_root)
 
     def _init_specifics(self) -> None:
         side = "right" if "right" in self.ee_link else "left"

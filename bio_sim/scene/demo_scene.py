@@ -269,7 +269,7 @@ class DemoScene(BioScene):
         stage = self._sim.world.stage
         for fx in self.fixtures:
             asset = load_object(fx.asset)
-            prim_path = f"/World/{fx.name}"
+            prim_path = f"{self.env_root}/{fx.name}"
             add_reference_to_stage(usd_path=asset.usd_path,
                                    prim_path=prim_path)
             prim = stage.GetPrimAtPath(prim_path)
@@ -326,10 +326,13 @@ class DemoScene(BioScene):
         """Pin every Thorlabs table (env_0 + visual mirrors) to kinematic."""
         from pxr import Usd, UsdPhysics
         stage = self._sim.world.stage
-        names = ["demo_table"]
-        names += [f"env_{i}/demo_table" for i in range(1, self._num_envs)]
-        for name in names:
-            root = stage.GetPrimAtPath(f"/World/{name}")
+        # env_0 table lives under self.env_root (Phase 1); the visual
+        # mirrors still spawn as siblings at /World/env_{i}/demo_table.
+        paths = [f"{self.env_root}/demo_table"]
+        paths += [f"/World/env_{i}/demo_table"
+                  for i in range(1, self._num_envs)]
+        for path in paths:
+            root = stage.GetPrimAtPath(path)
             if not root.IsValid():
                 continue
             for p in Usd.PrimRange(root):
@@ -543,17 +546,18 @@ class DemoScene(BioScene):
         if step_index != self._SYNC_STEP or step_index == self._last_sync:
             return
         self._last_sync = step_index
-        ignore = [robot_prim_path, "/World/defaultGroundPlane", "/curobo",
-                  "/World/_room", "/World/_lighting"]
-        ignore += [f"/World/{o.name}" for o in self.objects]
-        ignore += [f"/World/{name}" for name in self._otone_aabbs]
+        # only_paths=[env_root] excludes defaultGroundPlane, _room,
+        # _lighting, and visual-mirror /World/env_i/ siblings automatically.
+        # Robot self + cuRobo viz still need explicit ignore.
+        ignore = [robot_prim_path, "/curobo"]
+        ignore += [f"{self.env_root}/{o.name}" for o in self.objects]
+        ignore += [f"{self.env_root}/{name}" for name in self._otone_aabbs]
         # Skip the table visual mesh in the stage scrape: cuRobo can't
         # see the collision Cube (instanced), and the visual mesh is heavy
         # and overlaps the explicit table cuboid we add below.
-        ignore += [f"/World/{name}" for name in self._table_aabbs]
-        ignore += [f"/World/env_{i}" for i in range(1, self._num_envs)]
+        ignore += [f"{self.env_root}/{name}" for name in self._table_aabbs]
         obstacles = self._usd_help.get_obstacles_from_stage(
-            only_paths=["/World"],
+            only_paths=[self.env_root],
             reference_prim_path=robot_prim_path,
             ignore_substring=ignore,
         ).get_collision_check_world()

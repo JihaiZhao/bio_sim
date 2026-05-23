@@ -93,7 +93,8 @@ NAV_DX = 1.0                 # B is A + this many metres along world +x
 
 
 class BioScene:
-    def __init__(self, objects=None, tables=None, fixtures=None):
+    def __init__(self, objects=None, tables=None, fixtures=None,
+                 env_root: str = "/World/env_0"):
         self.objects: List[ObjectSpec] = objects or list(DEFAULT_OBJECTS)
         self.tables: List[TableSpec] = tables or list(DEFAULT_TABLES)
         # Small "risers" (one per table) sit on the table top and lift the
@@ -110,6 +111,11 @@ class BioScene:
         self._world_cfg = None
         self._last_sync = -1
         self._sim = None
+        # env_root is the per-env subtree this scene plants its prims
+        # under. Phase 0 plumbing only: _spawn_props / _spawn_fixtures /
+        # _apply_lighting / _apply_room still hard-code "/World/<name>"
+        # until Phase 1 sweeps prim paths under env_root.
+        self.env_root: str = env_root
         # Lighting + room cfg subdicts (or None). Populated by from_cfg.
         self._lighting_cfg: dict | None = None
         self._room_cfg: dict | None = None
@@ -163,7 +169,8 @@ class BioScene:
                 )
                 for o in recipe["objects"]
             ]
-        scene = cls(objects=objects, fixtures=fixtures)
+        env_root = (cfg or {}).get("env_root", "/World/env_0")
+        scene = cls(objects=objects, fixtures=fixtures, env_root=env_root)
         scene._lighting_cfg = (cfg or {}).get("lighting")
         scene._room_cfg = (cfg or {}).get("room")
         return scene
@@ -215,7 +222,7 @@ class BioScene:
         sim = self._sim
         for t in self.tables:
             self._table_prims[t.name] = sim.world.scene.add(FixedCuboid(
-                prim_path=f"/World/{t.name}", name=t.name,
+                prim_path=f"{self.env_root}/{t.name}", name=t.name,
                 position=np.array(t.center, dtype=np.float32),
                 scale=np.array(t.size, dtype=np.float32),
                 color=np.array(t.color),
@@ -225,7 +232,7 @@ class BioScene:
         # settles correctly onto the riser top.
         for r in self.risers:
             self._riser_prims[r.name] = sim.world.scene.add(FixedCuboid(
-                prim_path=f"/World/{r.name}", name=r.name,
+                prim_path=f"{self.env_root}/{r.name}", name=r.name,
                 position=np.array(r.center, dtype=np.float32),
                 scale=np.array(r.size, dtype=np.float32),
                 color=np.array(r.color),
@@ -254,7 +261,7 @@ class BioScene:
             else:
                 kw["size"] = o.size
             cube = sim.world.scene.add(DynamicCuboid(
-                prim_path=f"/World/{o.name}", name=o.name,
+                prim_path=f"{self.env_root}/{o.name}", name=o.name,
                 position=np.array(o.position, dtype=np.float32),
                 orientation=np.array(self.cube_quat, dtype=np.float32),
                 color=np.array(o.color), mass=0.5, **kw,
@@ -299,7 +306,7 @@ class BioScene:
         from pxr import Usd, UsdPhysics, UsdShade
 
         asset = load_object(o.asset)
-        prim_path = f"/World/{o.name}"
+        prim_path = f"{self.env_root}/{o.name}"
         add_reference_to_stage(usd_path=asset.usd_path, prim_path=prim_path)
         rigid = SingleRigidPrim(
             prim_path=prim_path, name=o.name,
@@ -343,7 +350,7 @@ class BioScene:
         stage = self._sim.world.stage
         for fx in self.fixtures:
             asset = load_object(fx.asset)
-            prim_path = f"/World/{fx.name}"
+            prim_path = f"{self.env_root}/{fx.name}"
             add_reference_to_stage(usd_path=asset.usd_path,
                                    prim_path=prim_path)
             prim = stage.GetPrimAtPath(prim_path)
@@ -577,9 +584,12 @@ class BioScene:
         if step_index == self._last_sync:
             return
         self._last_sync = step_index
-        ignore = [robot_prim_path, "/World/defaultGroundPlane", "/curobo",
-                  "/World/_room", "/World/_lighting"]
-        ignore += [f"/World/{o.name}" for o in self.objects]
+        # only_paths=[env_root] restricts the scrape to env_0's subtree:
+        # /World/defaultGroundPlane, /World/_room, /World/_lighting, and
+        # any future /World/env_i siblings are excluded automatically.
+        # Only robot self + cuRobo viz remain in the ignore list.
+        ignore = [robot_prim_path, "/curobo"]
+        ignore += [f"{self.env_root}/{o.name}" for o in self.objects]
         # Tables WERE ignored historically: the thin slab right under the
         # cube blocked the old sideways grasp from descending to a low pose
         # (IK_FAIL). With the new top-down grasp_quat the lower finger now
@@ -587,7 +597,7 @@ class BioScene:
         # included as an obstacle again. If a future low-side grasp comes
         # back, re-evaluate per-grasp instead of toggling here globally.
         obstacles = self._usd_help.get_obstacles_from_stage(
-            only_paths=["/World"],
+            only_paths=[self.env_root],
             reference_prim_path=robot_prim_path,
             ignore_substring=ignore,
         ).get_collision_check_world()
