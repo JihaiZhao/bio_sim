@@ -27,6 +27,7 @@ from dataclasses import dataclass
 from enum import Enum
 from typing import Annotated, Optional, Union
 
+import numpy as np
 import tyro
 from rich.console import Console
 from rich.table import Table
@@ -228,6 +229,32 @@ def _run(cmd: Run) -> None:
     robot.gripper.set_mode(cfg.get("grasp_mode", "physics"))
     robot.load_into(sim, scene)
     scene.place_for_validation(robot, cfg)
+    # Phase 2: clone env_0 -> env_1..N-1 BEFORE physics initializes so
+    # PhysX picks up every articulation root in one initialize_physics()
+    # call. replicate_physics=True duplicates every UsdPhysics.*API on
+    # the source subtree (robot articulation, RigidBody fixtures, etc.).
+    num_envs = int(cfg.get("num_envs", 1))
+    env_spacing = float(cfg.get("env_spacing", 0.0))
+    if num_envs > 1:
+        from isaacsim.core.cloner import Cloner
+
+        cloner = Cloner(stage=sim.world.stage)
+        env_paths = [f"/World/env_{i}" for i in range(num_envs)]
+        positions = np.array(
+            [[i * env_spacing, 0.0, 0.0] for i in range(num_envs)],
+            dtype=np.float32,
+        )
+        cloner.clone(
+            source_prim_path="/World/env_0",
+            prim_paths=env_paths,
+            positions=positions,
+            replicate_physics=True,
+            base_env_path="/World",
+            root_path="/World/env_",
+        )
+        print(f"[cli] cloned env_0 -> {num_envs - 1} replica(s) "
+              f"at +X spacing={env_spacing:.2f}")
+    robot.finalize_physics(sim)
     scene.attach_to_stage(sim)
     sim.add_extensions()
 

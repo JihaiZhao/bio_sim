@@ -244,6 +244,12 @@ class RobotBase:
 
     # ---- world build (called by play before sim.run) ------------------
     def load_into(self, sim, scene) -> None:
+        """USD reference + Robot wrapper + cuRobo ArmPlanner construction.
+
+        Does NOT initialize physics or the articulation view -- that lives
+        in finalize_physics(), which cli.py runs AFTER Cloner.clone so
+        PhysX sees env_0 and every cloned env_i articulation in one shot.
+        """
         from isaacsim.core.api.robots import Robot
         from isaacsim.core.utils.stage import add_reference_to_stage
 
@@ -258,14 +264,21 @@ class RobotBase:
         self._robot = sim.world.scene.add(
             Robot(prim_path=self.robot_prim_path, name="robot",
                   position=np.array([0.0, 0.0, 0.0])))
-        sim.world.initialize_physics()
-        self._robot.initialize()
         # Rebuild the arm planner now that we can give it the scene's
-        # world cfg.
+        # world cfg. cuRobo warmup compiles kernels -- no PhysX needed --
+        # so this stays here. The articulation view is initialized later.
         self.arm = ArmPlanner(self.robot_cfg, scene.curobo_world,
                               self.ee_link, self.idle_link,
                               reactive=self._reactive)
         self.arm.warmup()
+
+    def finalize_physics(self, sim) -> None:
+        """Initialize PhysX + the env_0 articulation view. Phase 2 calls
+        this AFTER Cloner.clone replicates env_0 into env_1..N-1, so the
+        single initialize_physics() walks every articulation root in the
+        stage (including the clones) in one pass."""
+        sim.world.initialize_physics()
+        self._robot.initialize()
 
     # ---- per-step init ------------------------------------------------
     @property

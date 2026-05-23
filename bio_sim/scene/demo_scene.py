@@ -238,8 +238,10 @@ class DemoScene(BioScene):
 
         self._spawn_props()
         self._make_thorlabs_static()
-        self._spawn_visual_mirrors(table_cx, table_cy, otone_cx, otone_cy,
-                                   table_base_z, table_top_z, plate_z)
+        # Phase 2: replaced the old _spawn_visual_mirrors() manual USD
+        # references with isaacsim.core.cloner.Cloner.clone() over the
+        # /World/env_0 subtree (see cli.py). The mirrors are now true
+        # physics-active clones, not static visual decoys.
 
         print(f"[demo_scene] env_0: plate @ ({ox:.3f},{oy:.3f},{plate_z:.3f})"
               f" place @ ({place_x:.3f},{place_y:.3f},{place_z:.3f}) "
@@ -323,15 +325,12 @@ class DemoScene(BioScene):
                   f"scale=({sx},{sy},{sz})")
 
     def _make_thorlabs_static(self) -> None:
-        """Pin every Thorlabs table (env_0 + visual mirrors) to kinematic."""
+        """Pin env_0's Thorlabs table to kinematic. Cloner.clone (Phase 2)
+        replicates the kinematic flag into every env_i automatically -- we
+        only need to author it on the source subtree once."""
         from pxr import Usd, UsdPhysics
         stage = self._sim.world.stage
-        # env_0 table lives under self.env_root (Phase 1); the visual
-        # mirrors still spawn as siblings at /World/env_{i}/demo_table.
-        paths = [f"{self.env_root}/demo_table"]
-        paths += [f"/World/env_{i}/demo_table"
-                  for i in range(1, self._num_envs)]
-        for path in paths:
+        for path in [f"{self.env_root}/demo_table"]:
             root = stage.GetPrimAtPath(path)
             if not root.IsValid():
                 continue
