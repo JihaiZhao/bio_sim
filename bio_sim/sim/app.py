@@ -170,9 +170,11 @@ class SimApp:
     def add_extensions(self) -> None:
         """curobo's isaac_sim example helper (asset import extensions).
 
-        Always pass headless_mode=None: the helper would otherwise enable
-        omni.kit.livestream.<mode>, which is absent in this pip install and
-        shuts the app down. We don't stream the viewport for validation.
+        Pass headless_mode=None here regardless: the helper's livestream
+        enablement path picks an old kwarg shape that the 5.1 webrtc ext
+        rejects. For streaming we enable omni.kit.livestream.webrtc via
+        SimulationApp extra_args at boot (see scripts/livestream_smoke.py
+        and the upcoming `bio_sim serve` subcommand) instead.
         """
         sys.path.append(
             os.path.join(_PROJECT_ROOT, "third_party", "curobo", "examples", "isaac_sim")

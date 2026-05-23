@@ -35,6 +35,7 @@ runs/
 wandb/
 _isaac_sim/
 *.usd.bak
+NvStreamer-*.etli
 
 # Build
 dist/
