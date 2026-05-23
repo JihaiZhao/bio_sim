@@ -84,21 +84,3 @@ lighting:
     mode: RealTime
     spp: 4
 
-# Room backdrop. Each wall is a FixedCuboid; `pos` is the centre, `size`
-# is [x, y, z] extents (so a back wall facing the camera is wide+tall and
-# thin in y). Walls live under /World/_room/ and are excluded from cuRobo
-# planning. Comment out / delete the `walls:` list to get an open scene.
-# Default 2 walls (back + camera-left): tuned for the multi-env demo row.
-# Add a "right" wall by appending another item; add `ceiling:` for a top.
-room:
-  walls:
-    - name: back
-      pos: [3.0, -2.5, 1.75]
-      size: [12.0, 0.1, 3.5]
-      color: [0.92, 0.88, 0.82]    # warm cream
-    - name: left
-      pos: [-2.5, -0.5, 1.75]
-      size: [0.1, 6.0, 3.5]
-      color: [0.88, 0.84, 0.78]    # slightly darker for contrast
-
-

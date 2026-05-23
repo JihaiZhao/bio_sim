@@ -24,7 +24,7 @@ from .skill import Skill, SkillContext, Status
 # ticks; 110 leaves a comfortable margin + a few ticks of force-build to
 # stabilize the contact friction before clamp_hold latches it.
 _CLOSE_TICKS_PHYSICS = 110
-_CLOSE_TICKS_ASSIST = 15
+_CLOSE_TICKS_ASSIST = 25
 # Release is now PHASED: phase 1 just opens the fingers (weld still holds
 # the plate), phase 2 deletes the weld. _OPEN_TICKS controls how long we
 # wait for the fingers to physically clear the plate before _unweld lets

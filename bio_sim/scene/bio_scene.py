@@ -105,6 +105,12 @@ class BioScene:
         self.fixtures: List[FixtureSpec] = fixtures or []
         self._fixture_prims: Dict[str, object] = {}
         self._obj_prims: Dict[str, object] = {}
+        # Lazy batched RigidPrim views across /World/env_*/<name>. Cached
+        # by object name; built on first reset_object() call so reset can
+        # broadcast pose + zero-velocity to every env in one set_world_poses
+        # / set_velocities call (instead of constructing N SingleRigidPrim
+        # wrappers, which had timing issues with _physics_view init).
+        self._plate_view_cache: Dict[str, object] = {}
         self._table_prims: Dict[str, object] = {}
         self._riser_prims: Dict[str, object] = {}
         self._usd_help = None
@@ -116,6 +122,11 @@ class BioScene:
         # _apply_lighting / _apply_room still hard-code "/World/<name>"
         # until Phase 1 sweeps prim paths under env_root.
         self.env_root: str = env_root
+        # Multi-env knobs (Phase 5): used by reset_object to snap clones'
+        # plate prims back to (grasp_xyz + i*spacing, ...) so an R-key
+        # reset doesn't leave env_1..N-1 plates wherever they fell.
+        self._num_envs: int = 1
+        self._env_spacing: float = 0.0
         # Lighting + room cfg subdicts (or None). Populated by from_cfg.
         self._lighting_cfg: dict | None = None
         self._room_cfg: dict | None = None
@@ -173,6 +184,8 @@ class BioScene:
         scene = cls(objects=objects, fixtures=fixtures, env_root=env_root)
         scene._lighting_cfg = (cfg or {}).get("lighting")
         scene._room_cfg = (cfg or {}).get("room")
+        scene._num_envs = max(1, int((cfg or {}).get("num_envs", 1)))
+        scene._env_spacing = float((cfg or {}).get("env_spacing", 0.0))
         return scene
 
     # ---- build --------------------------------------------------------
@@ -522,16 +535,78 @@ class BioScene:
 
     def reset_object(self, name: str) -> None:
         """Snap the cube back to its validated A-side grasp pose with zero
-        velocity (so a looped run repeats the exact validated scenario)."""
-        prim = self._obj_prims[name]
+        velocity (so a looped run repeats the exact validated scenario).
+
+        Multi-env: a batched RigidPrim view across /World/env_*/<name>
+        broadcasts world pose + zero velocities to every env in one
+        physics-tensor write. Tiled positions add (i * env_spacing, 0, 0)
+        per env. The view is cached and re-attaches its _physics_view
+        if Isaac tore it down (same pattern as RobotBase.broadcast_view).
+        """
         p = np.array(self.grasp_xyz, dtype=np.float32)
         q = np.array(self.cube_quat, dtype=np.float32)  # same as spawn
-        prim.set_world_pose(position=p, orientation=q)
-        for setter in ("set_linear_velocity", "set_angular_velocity"):
+
+        if self._num_envs <= 1:
+            prim = self._obj_prims[name]
+            prim.set_world_pose(position=p, orientation=q)
+            for setter in ("set_linear_velocity", "set_angular_velocity"):
+                try:
+                    getattr(prim, setter)(np.zeros(3, dtype=np.float32))
+                except Exception:  # noqa: BLE001
+                    pass
+            return
+
+        view = self._plate_view(name)
+        if view is None:
+            # View couldn't be built (no clones on stage?) -- fall back
+            # to env_0 only so at least one env resets.
+            self._obj_prims[name].set_world_pose(position=p, orientation=q)
+            return
+
+        n = self._num_envs
+        offsets = np.array(
+            [[i * self._env_spacing, 0.0, 0.0] for i in range(n)],
+            dtype=np.float32,
+        )
+        positions = (np.tile(p, (n, 1)) + offsets).astype(np.float32)
+        orientations = np.tile(q, (n, 1)).astype(np.float32)
+        view.set_world_poses(positions, orientations)
+        # Zero PhysX-integrated velocities so the next physics step
+        # doesn't carry the prior grasp's residual motion forward.
+        zeros3 = np.zeros((n, 3), dtype=np.float32)
+        try:
+            view.set_linear_velocities(zeros3)
+            view.set_angular_velocities(zeros3)
+        except Exception as exc:  # noqa: BLE001
+            print(f"[scene] reset_object zero-velocity skipped: {exc}")
+
+    def _plate_view(self, name: str):
+        """Lazily build a batched RigidPrim view across env_*/name. Caches
+        the view; re-attaches _physics_view if Isaac's prim-deletion event
+        tore it down (same defence as RobotBase.broadcast_view)."""
+        view = self._plate_view_cache.get(name)
+        if view is None:
+            from isaacsim.core.prims import RigidPrim
             try:
-                getattr(prim, setter)(np.zeros(3, dtype=np.float32))
-            except Exception:  # noqa: BLE001
-                pass
+                view = RigidPrim(
+                    prim_paths_expr=f"/World/env_*/{name}",
+                    name=f"{name}_view",
+                    reset_xform_properties=False,
+                )
+            except Exception as exc:  # noqa: BLE001
+                print(f"[scene] _plate_view build failed: {exc}")
+                return None
+            self._plate_view_cache[name] = view
+        # Refresh _physics_view if missing/torn down (matches the
+        # Articulation re-attach loop in RobotBase.broadcast_view).
+        if (not hasattr(view, "_physics_view")
+                or view._physics_view is None):
+            try:
+                view._on_physics_ready(None)
+            except Exception as exc:  # noqa: BLE001
+                print(f"[scene] _plate_view re-attach failed: {exc}")
+                return None
+        return view
 
     def randomize_plate(self) -> None:
         """Resample the first object's xy uniformly in [-hx, +hx] x [-hy, +hy]
