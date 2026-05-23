@@ -85,6 +85,14 @@ class G2Robot(RobotBase):
         return [i for i, n in enumerate(self.j_names)
                 if f"arm_{side}_" in n][:7]
 
+    def _body_joint_indices(self) -> list[int]:
+        # G2 torso = idx01..idx05_body_joint*. Five DOF, in cspace order.
+        return [i for i, n in enumerate(self.j_names) if "body_joint" in n]
+
+    def _head_joint_indices(self) -> list[int]:
+        # G2 head = idx11..idx13_head_joint*. Three DOF, in cspace order.
+        return [i for i, n in enumerate(self.j_names) if "head_joint" in n]
+
     # ---- per-step init (settle window) --------------------------------
     def ensure_initialized(self, ctx) -> None:
         if self._initialized:
@@ -228,8 +236,23 @@ class G2Robot(RobotBase):
                     gi, gp = self.gripper_joint_state()
                     gps = ("n/a" if gp is None
                            else "[" + ",".join(f"{x:.3f}" for x in gp) + "]")
+                    # Outer-joint actual applied effort: if this is pinned
+                    # at +/- GRIP_HOLD_FORCE the PD is saturated (force
+                    # ceiling is the bottleneck); if it's well under cap,
+                    # the bottleneck is contact geometry, not force.
+                    eff = "n/a"
+                    try:
+                        applied = self._robot._articulation_view\
+                            .get_applied_joint_efforts(
+                                joint_indices=np.asarray(
+                                    self._grip_idxs, dtype=np.int32))
+                        e_val = float(applied.flatten()[0])
+                        eff = f"{e_val:+.1f}"
+                    except Exception:  # noqa: BLE001
+                        pass
                     print(f"[carry] |ee-obj|={d:.4f} obj_z={float(op[2]):.3f} "
-                          f"fingers={gps}")
+                          f"fingers={gps} eff(outer)={eff} (cap=±"
+                          f"{self.GRIP_HOLD_FORCE:.0f})")
                 except Exception:  # noqa: BLE001
                     pass
         # In kinematic mode, re-assert the last arm config every step

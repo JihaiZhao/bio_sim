@@ -65,6 +65,9 @@ class _ResetKey:
             ctx.robot.base.reset_pose(
                 *getattr(ctx.robot, "base_start", (0.0, 0.0, 0.0)))
             name = ctx.scene.objects[0].name
+            # Resample plate xy first (no-op when randomization is disabled)
+            # so reset_object snaps the cube to the new grasp_xyz.
+            ctx.scene.randomize_plate()
             ctx.scene.reset_object(name)
             ctx.blackboard.pop("held", None)
         except Exception as exc:  # noqa: BLE001
@@ -72,6 +75,50 @@ class _ResetKey:
             return
         self._runner.restart()
         print("[reset] env reset done")
+
+    def close(self):
+        try:
+            self._input.unsubscribe_to_keyboard_events(
+                self._keyboard, self._sub)
+        except Exception:  # noqa: BLE001
+            pass
+
+
+class _RenderKey:
+    """Press P in the viewport to toggle RTX RealTime <-> PathTracing.
+    Path tracing accumulates samples for a couple seconds after the switch
+    -- intended use is: leave RealTime for normal demo runs, flip to PT
+    right before recording a take, flip back after."""
+
+    def __init__(self, spp: int = 4):
+        import carb.input
+        import omni.appwindow
+
+        self._spp = spp
+        self._kbd = carb.input
+        app_window = omni.appwindow.get_default_app_window()
+        self._keyboard = app_window.get_keyboard()
+        self._input = carb.input.acquire_input_interface()
+        self._sub = self._input.subscribe_to_keyboard_events(
+            self._keyboard, self._on_kbd)
+        print("[render] press  P  to toggle RealTime <-> PathTracing")
+
+    def _on_kbd(self, e):
+        et = self._kbd.KeyboardEventType
+        K = self._kbd.KeyboardInput
+        if e.type == et.KEY_PRESS and e.input == K.P:
+            self._toggle()
+        return True
+
+    def _toggle(self):
+        import carb
+        from bio_sim.scene import lighting
+
+        s = carb.settings.get_settings()
+        current_rtx = s.get_as_string("/rtx/rendermode")
+        current_mode = ("PathTracing" if current_rtx == "PathTracing"
+                        else "RealTime")
+        lighting.toggle_render_mode(current_mode, spp=self._spp)
 
     def close(self):
         try:
@@ -160,10 +207,12 @@ class SimApp:
         4. runner.tick(ctx)               -- advance the active skill
         """
         reset_key = None
+        render_key = None
         if self._headless is not None:
             self.world.play()  # no Play button in headless
         else:
             reset_key = _ResetKey(ctx, runner)
+            render_key = _RenderKey()
             # Windowed: make sure Isaac does NOT auto-start the timeline.
             # Stop it explicitly so nothing (init / settle / task) runs until
             # the user actually clicks Play.
@@ -221,4 +270,6 @@ class SimApp:
 
         if reset_key is not None:
             reset_key.close()
+        if render_key is not None:
+            render_key.close()
         self.close()

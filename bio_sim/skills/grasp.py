@@ -24,7 +24,7 @@ from .skill import Skill, SkillContext, Status
 # ticks; 110 leaves a comfortable margin + a few ticks of force-build to
 # stabilize the contact friction before clamp_hold latches it.
 _CLOSE_TICKS_PHYSICS = 110
-_CLOSE_TICKS_ASSIST = 20
+_CLOSE_TICKS_ASSIST = 15
 # Release is now PHASED: phase 1 just opens the fingers (weld still holds
 # the plate), phase 2 deletes the weld. _OPEN_TICKS controls how long we
 # wait for the fingers to physically clear the plate before _unweld lets
@@ -33,8 +33,13 @@ _CLOSE_TICKS_ASSIST = 20
 # Finger travel from clamp_hold target (~0.02) to clearly-off-plate
 # (~0.15) is ~0.13 rad; at terminal vel 0.3 rad/s = ~26 ticks. 60 leaves
 # margin + lets the plate settle a touch before unweld.
-_RELEASE_OPEN_TICKS = 60
-_SETTLE_TICKS = 110    # total Release skill duration (open + unweld + plate-settle)
+_RELEASE_OPEN_TICKS = 25
+# Total Release skill duration: open + unweld + finger-fully-open + plate-settle.
+# Sized so the fingers reach GRIP_OPEN_Q (0.8) BEFORE retreat starts -- otherwise
+# the arm lifts while the fingers are still PD-opening, which looks like a
+# second "open" mid-retreat. Finger travel ~0.05 -> 0.8 rad at terminal vel
+# 0.3 rad/s = ~150 ticks; 180 leaves margin so retreat starts on fully-open.
+_SETTLE_TICKS = 40
 
 
 class Grasp(Skill):

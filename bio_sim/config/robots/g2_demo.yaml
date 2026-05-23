@@ -26,7 +26,7 @@
 #    Robot torso reaches ~ -0.25 forward of base centre = -0.40 in
 #    world Y (estimate). Gap ~10 cm to table edge.
 # z is derived from the table+plate stack; left 0 here.
-cube_xyz: [-0.7, -0.45, 0.0]
+cube_xyz: [-0.7, -0.65, 0.0]
 grasp_quat: [0.0, 1.0, 0.0, 0.0]
 cube_quat: [0.7071, 0.0, 0.0, 0.7071]
 robot_face_yaw_deg: -90.0
@@ -36,4 +36,4 @@ robot_face_yaw_deg: -90.0
 # enough room for the robot's 0.3 m base radius vs the 0.45 m table-half).
 robot_start: [-0.5, 0.15, -1.5708]
 
-# Init arm pose unchanged from robots/g2.yaml -- inherits via the merge.
+# Init arm/body/head poses unchanged from robots/g2.yaml -- inherit via the merge.

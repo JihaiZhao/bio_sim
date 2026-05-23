@@ -130,14 +130,14 @@ class OtOneScene(BioScene):
 
         self.grasp_q = np.asarray(gq, dtype=np.float64)
 
-        # Plate half-extent (z) lookup, same convention as BioScene.
+        # Plate full z-extent lookup.
         obj = self.objects[0]
         if obj.asset is not None:
-            obj_half_z = float(load_object(obj.asset).size[2]) / 2.0
+            obj_z = float(load_object(obj.asset).size[2])
         elif obj.scale is not None:
-            obj_half_z = obj.scale[2] / 2.0
+            obj_z = obj.scale[2]
         else:
-            obj_half_z = obj.size / 2.0
+            obj_z = obj.size
 
         # Stack z layout is DERIVED, not from cfg: table BASE sits on the
         # floor (z=0), OT-One sits on the table top, plate sits on the
@@ -147,7 +147,7 @@ class OtOneScene(BioScene):
         table_base_z = 0.0
         table_top_z = THORLABS_HEIGHT
         deck_top_z = table_top_z + DECK_TOP_ABOVE_BASE
-        oz = deck_top_z + obj_half_z + GRASP_CLEARANCE
+        oz = deck_top_z + obj_z + GRASP_CLEARANCE
         # Plate xy is OT-One xy + a forward offset (toward robot, +Y world).
         # Table and OT-One stay at cfg's cube_xyz xy (centred on world xy);
         # only the plate sits closer to the front of the deck so the arm
@@ -346,7 +346,8 @@ class OtOneScene(BioScene):
         if step_index == self._last_sync:
             return
         self._last_sync = step_index
-        ignore = [robot_prim_path, "/World/defaultGroundPlane", "/curobo"]
+        ignore = [robot_prim_path, "/World/defaultGroundPlane", "/curobo",
+                  "/World/_room", "/World/_lighting"]
         ignore += [f"/World/{o.name}" for o in self.objects]
         ignore += [f"/World/{name}" for name in self._otone_aabbs]
         obstacles = self._usd_help.get_obstacles_from_stage(

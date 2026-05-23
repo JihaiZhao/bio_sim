@@ -34,5 +34,16 @@ robot_start: [-0.5, 1.0, 0.0]
 # that arm's yml retract; comment out the whole block to use the yml
 # retract unchanged.
 init_arm_pose:
-  left:  [ -0.7854, 1.57,  1.57, -2.3554, -1.57, 0.0, 0.0]
-  right: [ 0.7846, 1.57, -1.57, -2.3554, -1.57, 0.0, 0.0]
+  # left:  [ -0.7854, 1.57,  1.57, -2.3554, -1.57, 0.0, 0.0]
+  # right: [ 0.7846, 1.57, -1.57, -2.3554, -1.57, 0.0, 0.0]
+  left: [ 0.739033, -0.717023, -1.524419, -1.537612,  0.27811, -0.925845, -0.839257]
+  right: [-0.739033, -0.717023,  1.524419, -1.537612, -0.27811, -0.925845,  0.839257]
+
+# Torso (idx01..idx05_body_joint*) -- waist forward-lean + spine bend so the
+# arms reach forward-and-down to the table without folding the elbows past
+# the joint limit. Same overlay path as init_arm_pose (in-memory retract_config).
+init_body_pose: [-0.83423, 1.2172, 0.10025, 0.0, 0.0]
+
+# Head (idx11..idx13_head_joint*) -- slight downward tilt so the head camera
+# frames the workspace instead of the ceiling.
+init_head_pose: [0.0, 0.0, 0.11464]

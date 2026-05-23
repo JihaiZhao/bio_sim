@@ -35,12 +35,19 @@ def build_demo(cfg: dict | None = None) -> List[Skill]:
     lift_dz = cfg["lift_dz"]
     retreat_dz = cfg["retreat_dz"]
     place_dz = cfg["place_clearance_dz"]
+    # grasp_dz < 0 sinks EE BELOW the object's top face. Needed for thin
+    # objects (e.g. 1.46cm well plate) where the omnipicker fingertip
+    # closing arc passes at gripper_center height -- with EE at plate top
+    # the fingertips clear the plate sides entirely and close on empty
+    # air. -0.008 puts EE 8mm into the plate body so fingertips engage
+    # the side wall mid-height.
+    grasp_dz = float(cfg.get("grasp_dz", 0.0))
 
     return [
         # --- pick on the table ---
         MoveArmTo(MoveArmTo.grasp_pose(obj, dz=pre_dz),
                   label="pre-grasp", kinematic=True),
-        MoveArmTo(MoveArmTo.grasp_pose(obj, dz=0.0),
+        MoveArmTo(MoveArmTo.grasp_pose(obj, dz=grasp_dz),
                   label="grasp", kinematic=True),
         Grasp(obj),
         MoveArmTo(MoveArmTo.gripper_offset(lift_dz),

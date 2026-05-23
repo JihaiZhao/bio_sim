@@ -412,9 +412,13 @@ robot_cfg:
         }
     }
     lock_joints: {
-        'idx01_body_joint1': 0.0, 'idx02_body_joint2': 0.0,
-        'idx03_body_joint3':  0.0, 'idx04_body_joint4': 0.0, 'idx05_body_joint5': 0.0,
-        'idx11_head_joint1': 0.0, 'idx12_head_joint2': 0.0, 'idx13_head_joint3': 0.0,
+        # idx04_body_joint4 + 3 head joints unlocked: per-task init_body_pose /
+        # init_head_pose (e.g. body4 = 1.2172) needs cuRobo + Isaac to agree.
+        # Locking them at 0 in cuRobo while Isaac set_joint_positions wrote
+        # 1.2172 made cuRobo's FK underestimate the EE world position by the
+        # torso bend. Approach B: leave them active and let null_space_weight
+        # (8 body / 1 head) regularize them toward retract_config -- head has
+        # no influence on EE FK so it just stays at the seed.
         "idx72_gripper_r_inner_joint3": 0.0, "idx73_gripper_r_inner_joint4": 0.349,
         "idx81_gripper_r_outer_joint1": 0.785,
         "idx82_gripper_r_outer_joint3": 0.01,
@@ -468,29 +472,57 @@ robot_cfg:
         0.785, 0.0, -0.02,
         -0.785
         ]
+      # Body joints (idx01-05) weighted ~8x so cuRobo only recruits the
+      # torso when the arms alone can't reach. Head locked separately.
+      # Arm joint1/3/5 (per side) weighted 6x: these are the +/-178 deg
+      # shoulder/upper-arm/wrist roll joints that have two IK branches at
+      # nearly any EE pose -- with weight 1.0 the IK happily picks the
+      # flip-side solution and trajopt then has to swing 270 deg through.
+      # plan_single uses cu_js as both IK seed and regularization target
+      # (motion_gen.py:2820, ik_solver.py:643-649), so weight 6.0 here
+      # pulls the IK solution toward "stay near current" on those wrap-
+      # prone joints. Arm joint2/4/6/7 + fingers stay 1.0 (single-branch).
       null_space_weight: [
-        1.0, 1.0,1.0, 1.0, 1.0,
+        8.0, 8.0, 8.0, 8.0, 8.0,
         1.0, 1.0, 1.0,
-        1.0, 1.0, 1.0, 1.0, 1.0, 1.0, 1.0,
+        10.0, 1.0, 1.0, 1.0, 1.0, 1.0, 1.0,
         1.0, 1.0,
         1.0, 1.0, 1.0,
         1.0,
-        1.0, 1.0, 1.0, 1.0, 1.0, 1.0, 1.0,
+        10.0, 1.0, 1.0, 1.0, 1.0, 1.0, 1.0,
         1.0, 1.0,
         1.0, 1.0, 1.0,
         1.0
         ]
+      # Trajopt joint-motion cost: torso 5x more expensive than arm joints,
+      # so the optimizer reaches with the arm before bending the spine.
       cspace_distance_weight:  [
-        1.0, 1.0,1.0, 1.0, 1.0,
+        6.0, 6.0, 6.0, 6.0, 6.0,
         1.0, 1.0, 1.0,
-        1.0, 1.0, 1.0, 1.0, 1.0, 1.0, 1.0,
+        8.0, 1.0, 6.0, 1.0, 6.0, 1.0, 1.0,
         1.0, 1.0,
         1.0, 1.0, 1.0,
         1.0,
-        1.0, 1.0, 1.0, 1.0, 1.0, 1.0, 1.0,
+        8.0, 1.0, 6.0, 1.0, 6.0, 1.0, 1.0,
         1.0, 1.0,
         1.0, 1.0, 1.0,
         1.0
+        ]
+      # Symmetric inward clip of the URDF position limits (rad), applied to
+      # both ends. 22 entries -- cuRobo's `position_limit_clip` is consumed
+      # against the post-lock_joints active-joint tensor (size = #joint_names
+      # - #lock_joints = 34 - 12 = 22) and is NOT reindexed by
+      # inplace_reindex. Order is cspace joint_names with the locked entries
+      # removed: idx01..05 (body, all 5) -> idx11..13 (head) -> idx21..27
+      # (arm_l) -> idx61..67 (arm_r). idx05_body_joint5 (waist twist, URDF
+      # range +/-3.05 rad ~= +/-175 deg) is clipped to +/-0.6 rad (~+/-34
+      # deg). Other body / head joints are asymmetric and rely on
+      # null_space_weight to stay near init.
+      position_limit_clip: [
+        0.0, 0.0, 0.0, 0.0, 2.7,                # body: idx01..05
+        0.0, 0.0, 0.0,                          # head: idx11..13
+        0.0, 0.0, 0.0, 0.0, 0.0, 0.0, 0.0,      # arm_l: idx21..27
+        0.0, 0.0, 0.0, 0.0, 0.0, 0.0, 0.0,      # arm_r: idx61..67
         ]
       max_jerk: 500.0
       max_acceleration: 15.0

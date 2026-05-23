@@ -65,8 +65,22 @@ class RobotBase:
     GRIP_KD: float = 1.0e3
     GRIP_MAX_FORCE: float = 70.0
     GRIP_CLOSE_VEL: float = -0.6
-    GRIP_HOLD_SQUEEZE: float = 0.03
-    GRIP_HOLD_FORCE: float = 300.0
+    # SQUEEZE = position-target step at the close->hold transition. With
+    # KP=1e5 each rad of step asks PD for 1e5 N*m, so even 0.01 saturates
+    # the effort cap. Keep this SMALL so the transition impulse is gentle:
+    # the steady-state contact force is set by HOLD_FORCE, not by SQUEEZE.
+    # 0.03 was tuned for the heavy cube; on a 0.04 kg well plate it gave
+    # PD an impulsive kick that ejected the plate sideways before
+    # bilateral contact settled.
+    GRIP_HOLD_SQUEEZE: float = 0.01
+    # Hold-phase effort cap on the driven joint (omnipicker outer_joint1
+    # for G2; finger joints for R1). With omnipicker linkage advantage,
+    # 200 N*m at outer_joint1 generates several hundred N of fingertip
+    # normal force -- plenty for a 0.04 kg plate (need ~0.08 N at mu=5).
+    # 1500 was the diagnostic-headroom value used to confirm contact
+    # was being detected; it also slams a light plate out of the grasp.
+    # 200 is the goldilocks: enough to lock, mild enough to not flick.
+    GRIP_HOLD_FORCE: float = 200.0
 
     def __init__(self, robot_yml: str,
                  use_urdf_kinematics: bool = False,
@@ -155,6 +169,15 @@ class RobotBase:
         to keep its historical 'l'/'r' labels (and matcher token)."""
         return [("left", iap.get("left")), ("right", iap.get("right"))]
 
+    def _body_joint_indices(self) -> list[int]:
+        """DOF indices for the torso/body chain. Default: none -- robots
+        without a body chain (or whose body is locked) return []."""
+        return []
+
+    def _head_joint_indices(self) -> list[int]:
+        """DOF indices for the head/neck chain. Default: none."""
+        return []
+
     def _apply_base_start(self, task_cfg: dict) -> None:
         """Hook for robots that read robot_start from the task cfg.
         Default: no-op (R1's holonomic base spawns at origin)."""
@@ -162,29 +185,54 @@ class RobotBase:
 
     # ---- per-task init pose overlay ------------------------------------
     def apply_init_pose(self, task_cfg: dict) -> None:
-        """Overlay task_cfg['init_arm_pose'] {left:[7], right:[7]} onto
-        the IN-MEMORY retract_config -> drives BOTH the physical init
-        pose (ensure_initialized / reset_arm) AND the cuRobo IK seed /
-        null-space (ArmPlanner is rebuilt from self.robot_cfg in
-        load_into, which runs AFTER this). The committed robot yml is
-        never touched. Call before load_into(). Omit a side (or the
-        whole block) to keep the yml value."""
+        """Overlay task_cfg init poses onto the IN-MEMORY retract_config
+        -> drives BOTH the physical init pose (ensure_initialized /
+        reset_arm) AND the cuRobo IK seed / null-space (ArmPlanner is
+        rebuilt from self.robot_cfg in load_into, which runs AFTER
+        this). The committed robot yml is never touched. Call before
+        load_into(). Recognised keys (omit any to keep the yml value):
+          init_arm_pose:  {left: [7], right: [7]}
+          init_body_pose: [N]   N = len(_body_joint_indices())
+          init_head_pose: [N]   N = len(_head_joint_indices())
+        """
         self._apply_base_start(task_cfg)
-        iap = (task_cfg or {}).get("init_arm_pose")
-        if not iap:
+        task_cfg = task_cfg or {}
+        iap = task_cfg.get("init_arm_pose")
+        body_vals = task_cfg.get("init_body_pose")
+        head_vals = task_cfg.get("init_head_pose")
+        if not iap and body_vals is None and head_vals is None:
             return
         rc = list(self.retract_config)
-        for side, vals in self._init_pose_sides(iap):
+        if iap:
+            for side, vals in self._init_pose_sides(iap):
+                if vals is None:
+                    continue
+                idxs = self._arm_joint_indices(side)
+                if len(idxs) != 7 or len(vals) != 7:
+                    print(f"[init_pose] {side}-arm needs 7 values "
+                          f"(got {len(vals)}, slots {len(idxs)}) -- skipped")
+                    continue
+                for i, v in zip(idxs, vals):
+                    rc[i] = float(v)
+                print(f"[init_pose] {side}-arm <- {[float(v) for v in vals]} "
+                      f"(task override, in-memory; committed yml untouched)")
+        for label, vals, idxs in (
+            ("body", body_vals, self._body_joint_indices()),
+            ("head", head_vals, self._head_joint_indices()),
+        ):
             if vals is None:
                 continue
-            idxs = self._arm_joint_indices(side)
-            if len(idxs) != 7 or len(vals) != 7:
-                print(f"[init_pose] {side}-arm needs 7 values "
-                      f"(got {len(vals)}, slots {len(idxs)}) -- skipped")
+            if not idxs:
+                print(f"[init_pose] {label} pose given but this robot has "
+                      f"no {label} joints -- skipped")
+                continue
+            if len(vals) != len(idxs):
+                print(f"[init_pose] {label} needs {len(idxs)} values "
+                      f"(got {len(vals)}) -- skipped")
                 continue
             for i, v in zip(idxs, vals):
                 rc[i] = float(v)
-            print(f"[init_pose] {side}-arm <- {[float(v) for v in vals]} "
+            print(f"[init_pose] {label} <- {[float(v) for v in vals]} "
                   f"(task override, in-memory; committed yml untouched)")
         self.retract_config = rc
         self.robot_cfg["kinematics"]["cspace"]["retract_config"] = rc

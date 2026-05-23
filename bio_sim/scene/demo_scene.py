@@ -151,6 +151,12 @@ class DemoScene(BioScene):
         # to build the cuRobo cage.
         self._otone_aabbs: Dict[
             str, Tuple[float, float, float, float, float, float]] = {}
+        # Same shape, but for table fixtures. cuRobo can't read the
+        # Thorlabs collision Cube -- it sits inside an `instanceable=true`
+        # branch and stage.Traverse() doesn't enter instance prototypes --
+        # so we build the table obstacle ourselves from this AABB.
+        self._table_aabbs: Dict[
+            str, Tuple[float, float, float, float, float, float]] = {}
         # Multi-env knobs (read from cfg in place_for_validation).
         self._num_envs = 1
         self._env_spacing = 0.0
@@ -171,17 +177,21 @@ class DemoScene(BioScene):
             cfg.get("place_offset_xy", self._place_offset_xy))
         self._num_envs = max(1, int(cfg.get("num_envs", 1)))
         self._env_spacing = float(cfg.get("env_spacing", 4.0))
+        # R-key plate randomization range (see task_demo.yaml comment).
+        rxy = cfg.get("plate_random_dxy", (0.0, 0.0))
+        self._plate_random_dxy = (float(rxy[0]), float(rxy[1]))
+        self._plate_base_xy = (float(ox), float(oy))
 
         self.grasp_q = np.asarray(gq, dtype=np.float64)
 
-        # Plate half-extent (z) for clearance math.
+        # Plate full z-extent for clearance math.
         obj = self.objects[0]
         if obj.asset is not None:
-            obj_half_z = float(load_object(obj.asset).size[2]) / 2.0
+            obj_z = float(load_object(obj.asset).size[2])
         elif obj.scale is not None:
-            obj_half_z = obj.scale[2] / 2.0
+            obj_z = obj.scale[2]
         else:
-            obj_half_z = obj.size / 2.0
+            obj_z = obj.size
 
         # Vertical layout is DERIVED from the asset stack. The table is
         # LIFTED by TABLE_LIFT_Z so its top sits at the SAME world z as the
@@ -191,7 +201,7 @@ class DemoScene(BioScene):
         table_base_z = TABLE_LIFT_Z
         table_top_z = table_base_z + THORLABS_HEIGHT * DEMO_TABLE_Z_SCALE
         deck_top_z = table_top_z + DECK_TOP_ABOVE_BASE
-        plate_z = table_top_z + obj_half_z + GRASP_CLEARANCE
+        plate_z = table_top_z + obj_z + GRASP_CLEARANCE
 
         # Layout (post-rotation table, OT-One CENTRAL / plate FRONT-RIGHT):
         # cube_xyz xy is read as the PLATE position. Table is sized 0.76 m
@@ -210,7 +220,7 @@ class DemoScene(BioScene):
         pox, poy = self._place_offset_xy
         place_x = otone_cx + float(pox)
         place_y = otone_cy + float(poy)
-        place_z = deck_top_z + obj_half_z + GRASP_CLEARANCE
+        place_z = deck_top_z + obj_z + GRASP_CLEARANCE
         self.grasp_xyz = (ox, oy, plate_z)
         self.place_xyz = (place_x, place_y, place_z)
 
@@ -300,6 +310,13 @@ class DemoScene(BioScene):
                     float(mx[1] - mn[1]),
                     float(mx[2] - mn[2]),
                 )
+            elif fx.name == "demo_table" or fx.name.startswith("table"):
+                self._table_aabbs[fx.name] = (
+                    float(px), float(py), float(pz),
+                    float(mx[0] - mn[0]),
+                    float(mx[1] - mn[1]),
+                    float(mx[2] - mn[2]),
+                )
             print(f"[demo_scene] fixture '{fx.name}' <- {asset.data_info_dir}"
                   f" recentred: AABB c=({cx:.2f},{cy:.2f}) minz={mn[2]:.2f}"
                   f" -> footprint @ ({px:.2f},{py:.2f}) base z={pz:.2f} "
@@ -348,8 +365,6 @@ class DemoScene(BioScene):
 
         stage = self._sim.world.stage
         plate_asset_dir = self.objects[0].asset
-        plate_usd = (load_object(plate_asset_dir).usd_path
-                     if plate_asset_dir is not None else None)
 
         for i in range(1, self._num_envs):
             dx = float(i * self._env_spacing)
@@ -365,24 +380,30 @@ class DemoScene(BioScene):
                 pos=(table_cx + dx, table_cy, table_base_z),
                 quat=TABLE_QUAT_90Z, recenter=True,
                 scale=(1.0, 1.0, DEMO_TABLE_Z_SCALE))
-            # Mirror OT-One.
+            # Mirror OT-One. OT-One asset declares scale=0.001 (USD is mm
+            # labelled as m); env_0 picks this up via _spawn_fixtures'
+            # asset.scale fallback, so mirrors must do the same or they
+            # render at 1000x.
             o_asset = _mirror_otone_asset(i)
+            o_loaded = load_object(o_asset)
             o_path = f"{env_root}/ot_one"
-            add_reference_to_stage(usd_path=load_object(o_asset).usd_path,
-                                   prim_path=o_path)
+            add_reference_to_stage(usd_path=o_loaded.usd_path, prim_path=o_path)
             self._author_static_xform(
                 stage, o_path,
                 pos=(otone_cx + dx, otone_cy, table_top_z),
-                quat=OT_ONE_QUAT, recenter=True)
+                quat=OT_ONE_QUAT, recenter=True, scale=o_loaded.scale)
             self._set_subtree_kinematic(stage, o_path)
             # Mirror plate (static, kinematic so gravity won't take it).
-            if plate_usd is not None:
+            if plate_asset_dir is not None:
+                plate_loaded = load_object(plate_asset_dir)
                 p_path = f"{env_root}/plate"
-                add_reference_to_stage(usd_path=plate_usd, prim_path=p_path)
+                add_reference_to_stage(usd_path=plate_loaded.usd_path,
+                                       prim_path=p_path)
                 self._author_static_xform(
                     stage, p_path,
                     pos=(self.grasp_xyz[0] + dx, self.grasp_xyz[1], plate_z),
-                    quat=tuple(self.cube_quat), recenter=False)
+                    quat=tuple(self.cube_quat), recenter=False,
+                    scale=plate_loaded.scale)
                 self._set_subtree_kinematic(stage, p_path)
             print(f"[demo_scene] env_{i} visual mirror @ dx={dx:+.2f}")
 
@@ -489,6 +510,23 @@ class DemoScene(BioScene):
                 ))
         return cubes
 
+    def _build_table_curobo_cubes(self) -> list:
+        """One full-height box per cached table AABB. Thorlabs collision
+        geometry is hidden behind an instanceable reference so the stage
+        scrape can't see it; we approximate the table as a single solid
+        cuboid covering legs + top (legs are conservative -- the arm
+        won't path through them either)."""
+        from curobo.geom.types import Cuboid
+
+        cubes: list = []
+        for name, (px, py, pz, w, d, h) in self._table_aabbs.items():
+            cubes.append(Cuboid(
+                name=f"{name}_body",
+                pose=[px, py, pz + h / 2.0, 1.0, 0.0, 0.0, 0.0],
+                dims=[w, d, h],
+            ))
+        return cubes
+
     # cuRobo sync step. OtOneScene uses 50 because pick_place spends those
     # frames in FaceYaw/DriveStraight (the arm hasn't started planning yet).
     # The demo task has NO navigation -- MoveArmTo(pre-grasp) starts planning
@@ -505,9 +543,14 @@ class DemoScene(BioScene):
         if step_index != self._SYNC_STEP or step_index == self._last_sync:
             return
         self._last_sync = step_index
-        ignore = [robot_prim_path, "/World/defaultGroundPlane", "/curobo"]
+        ignore = [robot_prim_path, "/World/defaultGroundPlane", "/curobo",
+                  "/World/_room", "/World/_lighting"]
         ignore += [f"/World/{o.name}" for o in self.objects]
         ignore += [f"/World/{name}" for name in self._otone_aabbs]
+        # Skip the table visual mesh in the stage scrape: cuRobo can't
+        # see the collision Cube (instanced), and the visual mesh is heavy
+        # and overlaps the explicit table cuboid we add below.
+        ignore += [f"/World/{name}" for name in self._table_aabbs]
         ignore += [f"/World/env_{i}" for i in range(1, self._num_envs)]
         obstacles = self._usd_help.get_obstacles_from_stage(
             only_paths=["/World"],
@@ -516,13 +559,16 @@ class DemoScene(BioScene):
         ).get_collision_check_world()
 
         cage = self._build_otone_curobo_cages()
+        table_cubes = self._build_table_curobo_cubes()
         if obstacles.cuboid is None:
             obstacles.cuboid = []
         obstacles.cuboid.extend(cage)
+        obstacles.cuboid.extend(table_cubes)
 
         meshes = obstacles.mesh or []
         cuboids = obstacles.cuboid or []
         print(f"[demo_scene] cuRobo world: meshes={len(meshes)} "
-              f"cuboids={len(cuboids)} cage={len(cage)}")
+              f"cuboids={len(cuboids)} cage={len(cage)} "
+              f"tables={len(table_cubes)}")
         arm.sync_world(obstacles)
         print(f"[demo_scene] cuRobo world resynced @ step {step_index}")

@@ -104,6 +104,11 @@ def build_pick_place(cfg: dict | None = None) -> List[Skill]:
     lift_dz = cfg["lift_dz"]
     retreat_dz = cfg["retreat_dz"]
     place_dz = cfg["place_clearance_dz"]
+    # Per-task EE z offset at the grasp move (= 0 means EE at object top
+    # face). Negative values sink the EE into the object body so the
+    # omnipicker fingertip arc engages the side wall instead of closing
+    # above the object. See build_demo for the well-plate rationale.
+    grasp_dz = float(cfg.get("grasp_dz", 0.0))
     face_yaw = math.radians(cfg.get("robot_face_yaw_deg", -90.0))
     traverse = float(cfg.get("nav_dx", 2.5))  # detour leg == A<->B spacing
 
@@ -118,7 +123,7 @@ def build_pick_place(cfg: dict | None = None) -> List[Skill]:
         # --- pick ---
         MoveArmTo(MoveArmTo.grasp_pose(obj, dz=pre_dz),
                   label="pre-grasp", kinematic=True),
-        MoveArmTo(MoveArmTo.grasp_pose(obj, dz=0.0),
+        MoveArmTo(MoveArmTo.grasp_pose(obj, dz=grasp_dz),
                   label="grasp", kinematic=True),
         Grasp(obj),
         MoveArmTo(MoveArmTo.gripper_offset(lift_dz),

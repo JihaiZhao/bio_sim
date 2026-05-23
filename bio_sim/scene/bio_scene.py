@@ -110,6 +110,9 @@ class BioScene:
         self._world_cfg = None
         self._last_sync = -1
         self._sim = None
+        # Lighting + room cfg subdicts (or None). Populated by from_cfg.
+        self._lighting_cfg: dict | None = None
+        self._room_cfg: dict | None = None
         # filled by place_for_validation()
         self.place_xyz: Tuple[float, float, float] | None = None
         self.grasp_xyz: Tuple[float, float, float] | None = None
@@ -118,6 +121,12 @@ class BioScene:
         # locked to world X); now a yaml knob so the cube can be rotated to
         # present its 3cm face to whatever grasp_quat the gripper uses.
         self.cube_quat = np.array([1.0, 0.0, 0.0, 0.0])
+        # Per-reset plate randomization. Scenes that opt in set _plate_base_xy
+        # and _plate_random_dxy in place_for_validation; randomize_plate then
+        # resamples grasp_xyz around the base. Default: disabled (no-op).
+        self._plate_base_xy: Tuple[float, float] | None = None
+        self._plate_random_dxy: Tuple[float, float] = (0.0, 0.0)
+        self._plate_rng = np.random.default_rng()
 
     @classmethod
     def from_cfg(cls, cfg: dict) -> "BioScene":
@@ -154,7 +163,10 @@ class BioScene:
                 )
                 for o in recipe["objects"]
             ]
-        return cls(objects=objects, fixtures=fixtures)
+        scene = cls(objects=objects, fixtures=fixtures)
+        scene._lighting_cfg = (cfg or {}).get("lighting")
+        scene._room_cfg = (cfg or {}).get("room")
+        return scene
 
     # ---- build --------------------------------------------------------
     def build(self, sim) -> None:
@@ -166,6 +178,32 @@ class BioScene:
         self._sim = sim
         sim.world.scene.add_default_ground_plane()
         self._build_curobo_world()
+        self._apply_lighting(sim)
+        self._apply_room(sim)
+
+    def _apply_lighting(self, sim) -> None:
+        # Opt-in: tasks without a `lighting:` block in yaml keep the
+        # default Isaac look. Tasks with one get USD-authored dome/sun/fill
+        # under /World/_lighting/, plus an initial render mode.
+        cfg = getattr(self, "_lighting_cfg", None)
+        if not cfg:
+            return
+        from . import lighting
+        lighting.remove_default_dome(sim.world.stage)
+        lighting.apply_preset(sim.world.stage, "/World",
+                              cfg.get("preset", "studio"),
+                              override_cfg=cfg)
+        render = cfg.get("render") or {}
+        lighting.set_render_mode(render.get("mode", "RealTime"),
+                                 spp=int(render.get("spp", 4)))
+
+    def _apply_room(self, sim) -> None:
+        # Opt-in: tasks without a `room:` block keep an open-air scene.
+        cfg = getattr(self, "_room_cfg", None)
+        if not cfg:
+            return
+        from . import room
+        room.apply_walls(sim, "/World", cfg)
 
     def _spawn_props(self) -> None:
         from isaacsim.core.api.materials import PhysicsMaterial
@@ -234,9 +272,31 @@ class BioScene:
         velocity API stays uniform with the DynamicCuboid path, and apply
         the same grip-friction material as the cube. The referenced USD
         must already carry RigidBodyAPI + a collider (e.g. baked via the
-        well_plate_96 setup script)."""
+        well_plate_96 setup script).
+
+        SingleRigidPrim has NO apply_physics_material method (only the
+        DynamicCuboid MRO picks it up via SingleGeometryPrim), so we bind
+        the friction material at the USD level here. strongerThanDescendants
+        overrides any baked DefaultMaterial binding on the collider sub-prim
+        (e.g. well_plate's /World/mesh) -- without this override PhysX uses
+        the baked-empty material (mu~=0.5) and the thin plate slips out of
+        the friction grasp.
+
+        We also force the collider approximation to `convexHull` on every
+        Mesh under the rigid root. The shipped well_plate USD uses
+        `convexDecomposition` against a 380k-vertex / 126k-face VISUAL
+        mesh, which (a) blows past PhysX's per-hull vertex / hull-count
+        budgets and (b) decomposes the 96 punched-through wells into a
+        chaos of micro / degenerate convex pieces -- fingers slip into
+        the gaps and pass through the plate (the observed pure-physics
+        "passes through, doesn't lift" bug). convexHull collapses the
+        whole mesh into a single outer hull; the 96 wells are filled
+        solid, but friction grasp contacts the SIDE WALLS where hull and
+        true geometry coincide, so the simplification doesn't lose the
+        grasp surface."""
         from isaacsim.core.prims import SingleRigidPrim
         from isaacsim.core.utils.stage import add_reference_to_stage
+        from pxr import Usd, UsdPhysics, UsdShade
 
         asset = load_object(o.asset)
         prim_path = f"/World/{o.name}"
@@ -247,12 +307,26 @@ class BioScene:
             orientation=np.array(self.cube_quat, dtype=np.float32),
         )
         self._sim.world.scene.add(rigid)
-        try:
-            rigid.apply_physics_material(grip_mat)
-        except Exception as exc:  # noqa: BLE001
-            print(f"[scene] friction material skipped on {o.name}: {exc}")
+        prim = self._sim.world.stage.GetPrimAtPath(prim_path)
+        binding = UsdShade.MaterialBindingAPI.Apply(prim)
+        binding.Bind(
+            grip_mat.material,
+            bindingStrength=UsdShade.Tokens.strongerThanDescendants,
+            materialPurpose="physics",
+        )
+        hulls = 0
+        for p in Usd.PrimRange(prim):
+            if not p.HasAPI(UsdPhysics.MeshCollisionAPI):
+                continue
+            mc = UsdPhysics.MeshCollisionAPI(p)
+            attr = mc.GetApproximationAttr()
+            if not attr:
+                attr = mc.CreateApproximationAttr()
+            attr.Set(UsdPhysics.Tokens.convexHull)
+            hulls += 1
         print(f"[scene] object '{o.name}' <- {asset.data_info_dir} "
-              f"size={asset.size} mass={asset.mass}")
+              f"size={asset.size} mass={asset.mass} "
+              f"grip_mat bound, {hulls} mesh collider(s) -> convexHull")
         return rigid
 
     def _spawn_fixtures(self) -> None:
@@ -334,8 +408,14 @@ class BioScene:
         return self._world_cfg
 
     def attach_to_stage(self, sim) -> None:
+        # load_stage = bind cuRobo's UsdHelper to Isaac's live stage so the
+        # runtime maybe_sync() can traverse it. We deliberately do NOT call
+        # add_world_to_stage(self._world_cfg, ...) here -- that authors a
+        # /World/obstacles viz subtree of the INITIAL cuRobo world cfg
+        # which (a) nothing reads, (b) ends up double-counted by
+        # get_obstacles_from_stage during sync. Pure curobo-example
+        # leftover.
         self._usd_help.load_stage(sim.world.stage)
-        self._usd_help.add_world_to_stage(self._world_cfg, base_frame="/World")
 
     # ---- hard-coded layout (no IK search) -----------------------------
     def place_for_validation(self, robot, cfg: dict) -> None:
@@ -446,6 +526,25 @@ class BioScene:
             except Exception:  # noqa: BLE001
                 pass
 
+    def randomize_plate(self) -> None:
+        """Resample the first object's xy uniformly in [-hx, +hx] x [-hy, +hy]
+        around _plate_base_xy and update grasp_xyz so the next reset spawns
+        the plate at the new pose. Pick targets follow automatically because
+        MoveArmTo.grasp_pose reads the live object pose; place_xyz is left
+        untouched. No-op when the range is unset / zero."""
+        hx, hy = self._plate_random_dxy
+        if (hx == 0.0 and hy == 0.0) or self._plate_base_xy is None:
+            return
+        dx = float(self._plate_rng.uniform(-hx, hx))
+        dy = float(self._plate_rng.uniform(-hy, hy))
+        bx, by = self._plate_base_xy
+        nx, ny = bx + dx, by + dy
+        z = self.grasp_xyz[2]
+        self.grasp_xyz = (nx, ny, z)
+        self.objects[0].position = (nx, ny, z)
+        print(f"[scene] plate randomized -> ({nx:.3f}, {ny:.3f}) "
+              f"d=({dx:+.3f}, {dy:+.3f})")
+
     def object_dims(self, name: str):
         """(x, y, z) extents for the cuRobo payload box."""
         for o in self.objects:
@@ -478,7 +577,8 @@ class BioScene:
         if step_index == self._last_sync:
             return
         self._last_sync = step_index
-        ignore = [robot_prim_path, "/World/defaultGroundPlane", "/curobo"]
+        ignore = [robot_prim_path, "/World/defaultGroundPlane", "/curobo",
+                  "/World/_room", "/World/_lighting"]
         ignore += [f"/World/{o.name}" for o in self.objects]
         # Tables WERE ignored historically: the thin slab right under the
         # cube blocked the old sideways grasp from descending to a low pose
