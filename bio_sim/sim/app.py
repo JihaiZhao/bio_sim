@@ -53,28 +53,15 @@ class _ResetKey:
         return True
 
     def _reset(self):
-        ctx = self._ctx
-        try:
-            ctx.robot.gripper.release(ctx)  # detach payload + open fingers
-        except Exception:  # noqa: BLE001
-            pass
-        try:
-            ctx.robot.reset_arm()                # arm back to retract/init
-            ctx.robot.reset_gripper()            # SNAP fingers open (PD lag would
-                                                 # otherwise push plate on rerun)
-            ctx.robot.base.reset_pose(
-                *getattr(ctx.robot, "base_start", (0.0, 0.0, 0.0)))
-            name = ctx.scene.objects[0].name
-            # Resample plate xy first (no-op when randomization is disabled)
-            # so reset_object snaps the cube to the new grasp_xyz.
-            ctx.scene.randomize_plate()
-            ctx.scene.reset_object(name)
-            ctx.blackboard.pop("held", None)
-        except Exception as exc:  # noqa: BLE001
-            print(f"[reset] env reset failed: {exc}")
-            return
-        self._runner.restart()
-        print("[reset] env reset done")
+        # Delegate to the shared action bus so R-key and POST /reset run
+        # the exact same code path. See bio_sim/commands.py.
+        from .. import commands
+
+        result = commands.reset_env(self._ctx, self._runner)
+        if result.get("ok"):
+            print("[reset] env reset done")
+        else:
+            print(f"[reset] env reset failed: {result.get('error')}")
 
     def close(self):
         try:
@@ -129,13 +116,24 @@ class _RenderKey:
 
 
 class SimApp:
-    def __init__(self, headless: str | None = None, width: int = 1920, height: int = 1080):
+    def __init__(self, headless: str | None = None, width: int = 1920, height: int = 1080,
+                 livestream: bool = False):
         from isaacsim import SimulationApp  # noqa: WPS433
 
         self._headless = headless
-        self._app = SimulationApp(
-            {"headless": headless is not None, "width": str(width), "height": str(height)}
-        )
+        cfg = {
+            "headless": headless is not None,
+            "width": str(width),
+            "height": str(height),
+        }
+        if livestream:
+            # Enable the WebRTC server backend at boot. Signaling listens
+            # on ws://*:49100 (default in the ext's extension.toml).
+            # See scripts/livestream_smoke.py for the standalone smoke and
+            # the bio-sim-webrtc-livestream memory for the working setup.
+            cfg["extra_args"] = ["--enable", "omni.kit.livestream.webrtc"]
+            cfg["hide_ui"] = False  # streaming a hidden UI is pointless
+        self._app = SimulationApp(cfg)
 
         # Safe to import isaacsim.core now.
         from isaacsim.core.api import World  # noqa: WPS433
@@ -170,9 +168,11 @@ class SimApp:
     def add_extensions(self) -> None:
         """curobo's isaac_sim example helper (asset import extensions).
 
-        Always pass headless_mode=None: the helper would otherwise enable
-        omni.kit.livestream.<mode>, which is absent in this pip install and
-        shuts the app down. We don't stream the viewport for validation.
+        Pass headless_mode=None here regardless: the helper's livestream
+        enablement path picks an old kwarg shape that the 5.1 webrtc ext
+        rejects. For streaming we enable omni.kit.livestream.webrtc via
+        SimulationApp extra_args at boot (see scripts/livestream_smoke.py
+        and the upcoming `bio_sim serve` subcommand) instead.
         """
         sys.path.append(
             os.path.join(_PROJECT_ROOT, "third_party", "curobo", "examples", "isaac_sim")
@@ -204,13 +204,20 @@ class SimApp:
         self._app.close()
 
     # ---- main loop ----------------------------------------------------
-    def run(self, ctx, runner, on_world_sync=None) -> None:
+    def run(self, ctx, runner, on_world_sync=None,
+            on_pre_tick=None, keep_alive: bool = False) -> None:
         """Pump the sim. Per step, after physics settles:
 
         1. robot.ensure_initialized(ctx)  -- DOF map, drive modes (once)
         2. robot.base_hold(ctx)           -- keep kinematic base from drifting
-        3. on_world_sync(step_index)      -- periodic cuRobo obstacle resync
-        4. runner.tick(ctx)               -- advance the active skill
+        3. on_pre_tick(ctx, runner)       -- external command drain hook
+                                            (bio_sim serve drains HTTP queue here)
+        4. on_world_sync(step_index)      -- periodic cuRobo obstacle resync
+        5. runner.tick(ctx)               -- advance the active skill
+
+        keep_alive=True keeps the loop pumping even when runner.done in
+        headless mode. Used by `bio_sim serve` so the viewport remains
+        streamable and POST /reset can re-arm without relaunch.
         """
         reset_key = None
         render_key = None
@@ -256,6 +263,12 @@ class SimApp:
             if si < SETTLE_UNTIL:
                 continue
 
+            # External-command drain BEFORE world sync: a freshly-injected
+            # POST /reset moves the cube, and obstacle resync needs to see
+            # the new position before the next planning pass.
+            if on_pre_tick is not None:
+                on_pre_tick(ctx, runner)
+
             if on_world_sync is not None:
                 on_world_sync(si)
 
@@ -266,8 +279,11 @@ class SimApp:
                     status = "FAILED" if runner.failed else "COMPLETE"
                     print(f"[sim] task {status}")
                     printed_done = True
-                if self._headless is not None:
-                    break  # automated run: exit so the result is reported
+                # Headless one-shot exits so the result is reported; serve
+                # mode (keep_alive=True) keeps pumping so POST /reset can
+                # re-arm and the WebRTC stream stays live.
+                if self._headless is not None and not keep_alive:
+                    break
                 # Windowed: keep pumping the sim so the result stays visible
                 # AND the R key can reset + re-run the task (runner.restart()
                 # clears .done, so the loop picks the task back up).

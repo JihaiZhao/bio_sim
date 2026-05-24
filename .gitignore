@@ -35,6 +35,7 @@ runs/
 wandb/
 _isaac_sim/
 *.usd.bak
+NvStreamer-*.etli
 
 # Build
 dist/
@@ -42,3 +43,9 @@ build/
 
 # Vendored third-party clones (curobo etc.) — not tracked here
 third_party/
+
+# Assets — hosted on HuggingFace, fetched via scripts/fetch_assets.py
+# (.gitignore here only stops NEW additions from sneaking in. The handful
+# of files already tracked under assets/ are kept until the HF migration
+# is finalised; remove them then with `git rm --cached -r assets/`.)
+assets/

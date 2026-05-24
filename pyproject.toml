@@ -23,6 +23,17 @@ dependencies = [
     # the @dataclass commands in bio_sim/cli.py; rich is pulled transitively
     # by tyro and used directly for the `list` tables.
     "tyro>=0.9",
+    # `bio_sim serve` HTTP control plane (bio_sim/server.py). uvicorn runs
+    # in a daemon thread; FastAPI routes enqueue commands onto a queue that
+    # the sim main thread drains between physics steps.
+    "fastapi>=0.115",
+    # isaacsim-kernel transitively pins uvicorn==0.29.0; match it exactly
+    # so `uv sync` resolves. Don't bump without also bumping isaacsim.
+    "uvicorn==0.29.0",
+    # Asset hosting: USDs / meshes / HDRs live in an HF dataset repo
+    # (too big for plain git, past GitHub LFS free quota). Used by
+    # scripts/fetch_assets.py to populate assets/ on a fresh clone.
+    "huggingface_hub>=0.24",
 ]
 
 [tool.uv]

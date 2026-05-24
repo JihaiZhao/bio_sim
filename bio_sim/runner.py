@@ -34,6 +34,14 @@ class SkillRunner:
             return self._skills[self._i]
         return None
 
+    @property
+    def index(self) -> int:
+        return self._i
+
+    @property
+    def total(self) -> int:
+        return len(self._skills)
+
     def tick(self, ctx: SkillContext) -> None:
         if self.done:
             return
