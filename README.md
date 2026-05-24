@@ -29,29 +29,36 @@ drive it.
 
 ## Setup
 
+Three things live outside `git clone` and have to be fetched separately
+before `uv sync`: cuRobo source, the asset pack, then the Python env.
+
 ```bash
 git clone <this-repo> && cd bio_sim
 
-# cuRobo is referenced as an editable install at third_party/curobo/, but
-# the directory is .gitignored (not vendored, not a submodule). Clone it
-# yourself before syncing:
+# 1) cuRobo source — referenced as an editable install at
+#    third_party/curobo/, but the directory is .gitignored (not vendored,
+#    not a submodule). Clone NVlabs/curobo there yourself:
 mkdir -p third_party && \
   git clone https://github.com/NVlabs/curobo.git third_party/curobo
-# Known-working pin (latest tested in this project):
-git -C third_party/curobo checkout d64c4b0   # past tag v0.7.8
+git -C third_party/curobo checkout d64c4b0   # known-working pin, past tag v0.7.8
 
+# 2) Python env — installs Isaac Sim 5.1, torch cu128, cuRobo (editable
+#    CUDA build), huggingface_hub, FastAPI, uvicorn, etc.
 uv sync
+
+# 3) Asset pack — USDs / meshes / HDRs are hosted on HuggingFace
+#    Datasets (jihai518/bio_demo). Downloads into ./assets/.
+uv run python scripts/fetch_assets.py
 ```
 
 The first `uv sync` does three slow things back to back:
 
 1. Pulls Isaac Sim 5.1 wheels from `pypi.nvidia.com` (~2 GB).
 2. Pulls torch cu128 from PyTorch's index.
-3. Builds cuRobo's CUDA extensions from `third_party/curobo/` (the
-   editable install in `pyproject.toml`'s `[tool.uv.sources]`).
-   This is the longest step (~5–15 min depending on the GPU arch). If
+3. Builds cuRobo's CUDA extensions from `third_party/curobo/`. This is
+   the longest step (~5–15 min depending on the GPU arch). If
    `third_party/curobo/` doesn't exist, `uv sync` fails with
-   `path does not exist` — that means you skipped the clone above.
+   `path does not exist` — that means you skipped step 1.
 
 After it finishes, verify nothing is broken **without booting Isaac**:
 
@@ -67,11 +74,20 @@ This prints the robot / scene / task registry tables. It doesn't import
 > isn't declared, including cuRobo itself, which silently breaks every
 > robot import. Always go through `uv add` / edit `pyproject.toml`.
 
-> ⚠️ **Assets gap.** Several scene/robot USDs (`assets/lighting/`,
-> `assets/objects/`, `assets/Collected_World0/`, parts of `assets/robot/r1pro/`)
-> aren't checked in yet. A fresh clone has enough to import code and run
-> `list`, but `run` / `serve` will fail until the asset pack is added.
-> This is being tracked separately.
+Asset pack lives at
+[`huggingface.co/datasets/jihai518/bio_demo`](https://huggingface.co/datasets/jihai518/bio_demo).
+Public, no auth needed for `fetch_assets.py`.
+
+### Updating the asset pack
+
+```bash
+# Pull the latest revision (or pin a tag for reproducibility)
+uv run python scripts/fetch_assets.py --revision main
+uv run python scripts/fetch_assets.py --revision v0.1   # pinned
+
+# Private repo? Authenticate once:
+huggingface-cli login    # or pass --token <hf_xxx> per call
+```
 
 ---
 

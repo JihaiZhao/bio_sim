@@ -30,6 +30,10 @@ dependencies = [
     # isaacsim-kernel transitively pins uvicorn==0.29.0; match it exactly
     # so `uv sync` resolves. Don't bump without also bumping isaacsim.
     "uvicorn==0.29.0",
+    # Asset hosting: USDs / meshes / HDRs live in an HF dataset repo
+    # (too big for plain git, past GitHub LFS free quota). Used by
+    # scripts/fetch_assets.py to populate assets/ on a fresh clone.
+    "huggingface_hub>=0.24",
 ]
 
 [tool.uv]

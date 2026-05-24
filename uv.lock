@@ -277,6 +277,7 @@ version = "0.1.0"
 source = { virtual = "." }
 dependencies = [
     { name = "fastapi" },
+    { name = "huggingface-hub" },
     { name = "isaaclab", extra = ["all", "isaacsim"] },
     { name = "nvidia-curobo" },
     { name = "torch" },
@@ -289,6 +290,7 @@ dependencies = [
 [package.metadata]
 requires-dist = [
     { name = "fastapi", specifier = ">=0.115" },
+    { name = "huggingface-hub", specifier = ">=0.24" },
     { name = "isaaclab", extras = ["isaacsim", "all"], specifier = "==2.3.2.post1" },
     { name = "nvidia-curobo", editable = "third_party/curobo" },
     { name = "torch", specifier = "==2.7.0", index = "https://download.pytorch.org/whl/cu128" },
